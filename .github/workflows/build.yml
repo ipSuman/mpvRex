@@ -29,8 +29,8 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: List available assemble tasks
-        run: ./gradlew tasks --all
+      - name: Show Android tasks
+        run: ./gradlew app:tasks --all
 
       - name: Upload app-arm64-v8a Artifact
         uses: actions/upload-artifact@v4
