@@ -364,11 +364,21 @@ object CoreMediaScanner {
     ) {
         try {
             val externalVolumes = StorageVolumeUtils.getExternalStorageVolumes(context)
+            val browserPreferences =
+    org.koin.core.context.GlobalContext.get()
+        .get<xyz.mpv.rex.preferences.BrowserPreferences>()
+
+val ignoreNoMedia = browserPreferences.ignoreNoMedia.get()
             for (volume in externalVolumes) {
                 val volumePath = StorageVolumeUtils.getVolumePath(volume) ?: continue
                 val volumeDir = File(volumePath)
                 if (volumeDir.exists() && volumeDir.canRead()) {
-                    recursiveFileSystemScan(volumeDir, rawMedia, 0)
+                    recursiveFileSystemScan(
+    volumeDir,
+    rawMedia,
+    0,
+    ignoreNoMedia
+)
                 }
             }
         } catch (e: Exception) {
@@ -377,19 +387,25 @@ object CoreMediaScanner {
     }
 
     private fun recursiveFileSystemScan(
-        directory: File,
-        rawMedia: MutableMap<String, MutableList<ScannedItem>>,
-        depth: Int
-    ) {
+    directory: File,
+    rawMedia: MutableMap<String, MutableList<ScannedItem>>,
+    depth: Int,
+    ignoreNoMedia: Boolean
+){
         if (depth > 20) return // Safety limit
         val files = directory.listFiles() ?: return
         
         val itemsInFolder = mutableListOf<ScannedItem>()
         for (file in files) {
             if (file.isDirectory) {
-                if (!FileFilterUtils.shouldSkipFolder(file)) {
-                    recursiveFileSystemScan(file, rawMedia, depth + 1)
-                }
+                if (!FileFilterUtils.shouldSkipFolder(file, ignoreNoMedia)) {
+    recursiveFileSystemScan(
+        file,
+        rawMedia,
+        depth + 1,
+        ignoreNoMedia
+    )
+}
             } else if (file.isFile) {
                 if (FileTypeUtils.isMediaFile(file)) {
                     itemsInFolder.add(
