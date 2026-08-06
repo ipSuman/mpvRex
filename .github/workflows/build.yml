@@ -29,8 +29,13 @@ jobs:
       - name: Make gradlew executable
         run: chmod +x ./gradlew
 
-      - name: Show Android tasks
-        run: ./gradlew app:tasks --all
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug
+
+      - name: Find all APKs
+        run: |
+         echo "===== APK FILES ====="
+         find app/build -type f -name "*.apk"
 
       - name: Upload app-arm64-v8a Artifact
         uses: actions/upload-artifact@v4
