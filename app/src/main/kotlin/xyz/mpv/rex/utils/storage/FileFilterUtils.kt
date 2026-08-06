@@ -47,15 +47,20 @@ object FileFilterUtils {
     /**
      * Checks if a folder should be skipped during scanning
      */
-    fun shouldSkipFolder(folder: File): Boolean {
-        if (hasNoMediaFile(folder)) {
-            return true
-        }
+    fun shouldSkipFolder(
+    folder: File,
+    ignoreNoMedia: Boolean = false
+): Boolean {
 
-        val name = folder.name.lowercase()
-        val isHidden = name.startsWith(".")
-        return isHidden || SKIP_FOLDERS.contains(name)
+    if (!ignoreNoMedia && hasNoMediaFile(folder)) {
+        return true
     }
+
+    val name = folder.name.lowercase()
+    val isHidden = name.startsWith(".")
+
+    return isHidden || SKIP_FOLDERS.contains(name)
+}
 
     /**
      * Checks if a file should be skipped during file listing
