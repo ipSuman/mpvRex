@@ -524,6 +524,29 @@ object AppearancePreferencesScreen : Screen {
                                 }
                             )
 
+PreferenceDivider()
+
+val ignoreNoMedia by browserPreferences.ignoreNoMedia.collectAsState()
+
+SwitchPreference(
+    value = ignoreNoMedia,
+    onValueChange = {
+        browserPreferences.ignoreNoMedia.set(it)
+        xyz.mpv.rex.utils.storage.CoreMediaScanner.clearCache()
+    },
+    title = {
+        Text(
+            text = stringResource(R.string.pref_ignore_nomedia_title),
+        )
+    },
+    summary = {
+        Text(
+            text = stringResource(R.string.pref_ignore_nomedia_summary),
+            color = MaterialTheme.colorScheme.outline,
+        )
+    }
+)
+
                             PreferenceDivider()
 
                             val showTreeViewPath by browserPreferences.showTreeViewPath.collectAsState()
