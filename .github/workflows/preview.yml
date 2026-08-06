@@ -42,6 +42,7 @@ jobs:
         run: ./gradlew assemblePreview
 
       - name: Sign APKs
+  if: false
         run: |
           set -e
           RELEASE_DIR="app/build/outputs/apk/preview"
@@ -89,7 +90,7 @@ jobs:
           mkdir -p output
           
           for arch in "${apks[@]}"; do
-            src="app/build/outputs/apk/preview/app-${arch}-preview.apk"
+            src="app/build/outputs/apk/preview/app-${arch}-preview-unsigned.apk"
             dest="output/mpvRex-preview-r${commit_count}-${arch}.apk"
             
             if [ ! -f "$src" ]; then
