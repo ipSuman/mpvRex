@@ -42,7 +42,6 @@ jobs:
         run: ./gradlew assemblePreview
 
       - name: Sign APKs
-  if: false
         run: |
           set -e
           RELEASE_DIR="app/build/outputs/apk/preview"
@@ -90,7 +89,7 @@ jobs:
           mkdir -p output
           
           for arch in "${apks[@]}"; do
-            src="app/build/outputs/apk/preview/app-${arch}-preview-unsigned.apk"
+            src="app/build/outputs/apk/preview/app-${arch}-preview.apk"
             dest="output/mpvRex-preview-r${commit_count}-${arch}.apk"
             
             if [ ! -f "$src" ]; then
@@ -105,6 +104,52 @@ jobs:
             echo "${arch}_size=$size" >> $GITHUB_OUTPUT
           done
 
+      - name: Upload all artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: preview-apks
+          path: output/
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: preview-apks
+          path: ./public
+
+      - name: Generate download page
+        run: |
+          export COMMIT_COUNT=${{ needs.build.outputs.commit_count }}
+          export BUILD_TIME="${{ needs.build.outputs.build_time }}"
+          export UNIVERSAL_SIZE="${{ needs.build.outputs.universal_size }}"
+          export ARM64_SIZE="${{ needs.build.outputs.arm64-v8a_size }}"
+          export ARMV7_SIZE="${{ needs.build.outputs.armeabi-v7a_size }}"
+          export X86_SIZE="${{ needs.build.outputs.x86_size }}"
+          export X86_64_SIZE="${{ needs.build.outputs.x86_64_size }}"
+          
+          envsubst < .github/workflows/preview.template.html > ./public/index.html
+
+
+      - name: Upload to GitHub Pages
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: ./public
+
+  deploy:
+    needs: publish
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
       - name: Upload all artifacts
         uses: actions/upload-artifact@v4
         with:
