@@ -46,6 +46,7 @@ private slots:
     void togglePlaylist();
     void playPrevious();
     void playNext();
+    void showTracksMenu();
 
 private:
     bool initializeMpv();
