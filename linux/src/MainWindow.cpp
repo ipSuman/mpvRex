@@ -127,12 +127,10 @@ bool MainWindow::initializeMpv() {
         mpv_set_option_string(m_mpv, "terminal", "no") < 0 ||
         mpv_set_option_string(m_mpv, "osc", "no") < 0 ||
         mpv_set_option_string(m_mpv, "keep-open", "yes") < 0) {
-        showError(QStringLiteral("Could not configure libmpv."));
-        return false;
+        showError(QStringLiteral("Could not configure libmpv.")); return false;
     }
     if (mpv_initialize(m_mpv) < 0) {
-        showError(QStringLiteral("Could not initialize libmpv."));
-        return false;
+        showError(QStringLiteral("Could not initialize libmpv.")); return false;
     }
     return true;
 }
@@ -147,7 +145,7 @@ void MainWindow::loadFile(const QString& path) {
     setWindowTitle(QStringLiteral("%1 — REX Player").arg(QFileInfo(absolute).fileName()));
 }
 
-void MainWindow::command(const char* const args[]) {
+void MainWindow::command(const char** args) {
     if (m_mpv) mpv_command_async(m_mpv, 0, args);
 }
 
