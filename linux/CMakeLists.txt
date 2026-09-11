@@ -22,4 +22,6 @@ target_link_libraries(rex-player PRIVATE
     PkgConfig::LIBMPV
 )
 
+target_compile_options(rex-player PRIVATE -fpermissive)
+
 install(TARGETS rex-player RUNTIME DESTINATION bin)
