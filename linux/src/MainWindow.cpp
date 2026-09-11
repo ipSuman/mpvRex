@@ -1,8 +1,10 @@
 #include "MainWindow.h"
 
 #include <QAbstractItemView>
+#include <QAction>
 #include <QCloseEvent>
 #include <QDir>
+#include <QDockWidget>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileDialog>
@@ -12,12 +14,12 @@
 #include <QLabel>
 #include <QListWidget>
 #include <QListWidgetItem>
+#include <QMenu>
 #include <QMimeData>
 #include <QPushButton>
 #include <QSlider>
 #include <QVBoxLayout>
 #include <QWidget>
-#include <QDockWidget>
 
 #include <algorithm>
 #include <cmath>
@@ -37,6 +39,31 @@ const QStringList kMediaExtensions = {
 
 bool isMediaFile(const QFileInfo& info) {
     return info.isFile() && kMediaExtensions.contains(info.suffix().toLower());
+}
+
+const mpv_node* mapValue(const mpv_node_list* map, const char* key) {
+    if (!map || !map->keys || !map->values) return nullptr;
+    for (int i = 0; i < map->num; ++i) {
+        if (map->keys[i] && qstrcmp(map->keys[i], key) == 0) return &map->values[i];
+    }
+    return nullptr;
+}
+
+QString nodeString(const mpv_node* node) {
+    if (!node) return {};
+    if (node->format == MPV_FORMAT_STRING && node->u.string) return QString::fromUtf8(node->u.string);
+    return {};
+}
+
+int nodeInt(const mpv_node* node, int fallback = -1) {
+    if (!node) return fallback;
+    if (node->format == MPV_FORMAT_INT64) return static_cast<int>(node->u.int64);
+    if (node->format == MPV_FORMAT_DOUBLE) return static_cast<int>(node->u.double_);
+    return fallback;
+}
+
+bool nodeFlag(const mpv_node* node) {
+    return node && node->format == MPV_FORMAT_FLAG && node->u.flag != 0;
 }
 }
 
@@ -146,6 +173,11 @@ void MainWindow::buildUi() {
     m_volumeSlider->setFixedWidth(130);
     connect(m_volumeSlider, &QSlider::valueChanged, this, &MainWindow::setVolume);
     row->addWidget(m_volumeSlider);
+
+    auto* tracks = new QPushButton(QStringLiteral("Tracks"), m_controls);
+    tracks->setToolTip(QStringLiteral("Select audio and subtitle tracks"));
+    connect(tracks, &QPushButton::clicked, this, &MainWindow::showTracksMenu);
+    row->addWidget(tracks);
 
     auto* playlistButton = new QPushButton(QStringLiteral("Playlist"), m_controls);
     playlistButton->setToolTip(QStringLiteral("Show or hide playlist"));
@@ -299,6 +331,111 @@ double MainWindow::getPropertyDouble(const char* name) const {
 }
 void MainWindow::setPropertyDouble(const char* name, double value) {
     if (m_mpv) mpv_set_property_async(m_mpv, 0, name, MPV_FORMAT_DOUBLE, &value);
+}
+
+void MainWindow::showTracksMenu() {
+    if (!m_mpv) return;
+
+    mpv_node tracks{};
+    if (mpv_get_property(m_mpv, "track-list", MPV_FORMAT_NODE, &tracks) < 0 ||
+        tracks.format != MPV_FORMAT_NODE_ARRAY || !tracks.u.list) {
+        mpv_free_node_contents(&tracks);
+        return;
+    }
+
+    auto* menu = new QMenu(this);
+    menu->setAttribute(Qt::WA_DeleteOnClose);
+    auto* audioMenu = menu->addMenu(QStringLiteral("Audio"));
+    auto* subtitleMenu = menu->addMenu(QStringLiteral("Subtitles"));
+
+    const mpv_node_list* list = tracks.u.list;
+    bool hasAudio = false;
+    bool hasSubtitles = false;
+
+    auto addTrack = [this](QMenu* target, const QString& label, int id, bool selected, const char* property) {
+        auto* action = target->addAction(label);
+        action->setCheckable(true);
+        action->setChecked(selected);
+        connect(action, &QAction::triggered, this, [this, id, property] {
+            if (id < 0) {
+                const char* value = "no";
+                mpv_set_property_async(m_mpv, 0, property, MPV_FORMAT_STRING, &value);
+            } else {
+                const int64_t value = id;
+                mpv_set_property_async(m_mpv, 0, property, MPV_FORMAT_INT64, &value);
+            }
+        });
+    };
+
+    addTrack(audioMenu, QStringLiteral("Auto"), -1, false, "aid");
+    {
+        const mpv_node* aidNode = nullptr;
+        mpv_node aid{};
+        if (mpv_get_property(m_mpv, "aid", MPV_FORMAT_NODE, &aid) >= 0) {
+            aidNode = &aid;
+            if (aidNode->format == MPV_FORMAT_INT64) {
+                const int currentAid = static_cast<int>(aidNode->u.int64);
+                audioMenu->actions().first()->setChecked(currentAid < 0);
+            }
+        }
+        mpv_free_node_contents(&aid);
+    }
+
+    auto* autoSubtitle = subtitleMenu->addAction(QStringLiteral("Off"));
+    autoSubtitle->setCheckable(true);
+    {
+        mpv_node sid{};
+        if (mpv_get_property(m_mpv, "sid", MPV_FORMAT_NODE, &sid) >= 0 && sid.format == MPV_FORMAT_INT64)
+            autoSubtitle->setChecked(sid.u.int64 < 0);
+        mpv_free_node_contents(&sid);
+    }
+    connect(autoSubtitle, &QAction::triggered, this, [this] {
+        const char* value = "no";
+        mpv_set_property_async(m_mpv, 0, "sid", MPV_FORMAT_STRING, &value);
+    });
+
+    for (int i = 0; i < list->num; ++i) {
+        const mpv_node& track = list->values[i];
+        if (track.format != MPV_FORMAT_NODE_MAP || !track.u.list) continue;
+
+        const QString type = nodeString(mapValue(track.u.list, "type"));
+        const int id = nodeInt(mapValue(track.u.list, "id"));
+        if (id < 0) continue;
+        const QString lang = nodeString(mapValue(track.u.list, "lang"));
+        const QString title = nodeString(mapValue(track.u.list, "title"));
+        const QString external = nodeString(mapValue(track.u.list, "external-filename"));
+        const bool selected = nodeFlag(mapValue(track.u.list, "selected"));
+
+        QString label = title;
+        if (label.isEmpty()) label = lang;
+        if (label.isEmpty() && !external.isEmpty()) label = QFileInfo(external).fileName();
+        if (label.isEmpty()) label = QStringLiteral("Track %1").arg(id);
+        if (!lang.isEmpty() && title != lang) label += QStringLiteral(" (%1)").arg(lang);
+
+        if (type == QStringLiteral("audio")) {
+            addTrack(audioMenu, label, id, selected, "aid");
+            hasAudio = true;
+        } else if (type == QStringLiteral("sub")) {
+            auto* action = subtitleMenu->addAction(label);
+            action->setCheckable(true);
+            action->setChecked(selected);
+            connect(action, &QAction::triggered, this, [this, id] {
+                const int64_t value = id;
+                mpv_set_property_async(m_mpv, 0, "sid", MPV_FORMAT_INT64, &value);
+            });
+            hasSubtitles = true;
+        }
+    }
+
+    audioMenu->setEnabled(hasAudio);
+    subtitleMenu->setEnabled(hasSubtitles || subtitleMenu->actions().size() > 0);
+
+    if (auto* button = qobject_cast<QPushButton*>(sender()))
+        menu->popup(button->mapToGlobal(QPoint(0, button->height())));
+    else
+        menu->popup(QCursor::pos());
+
+    mpv_free_node_contents(&tracks);
 }
 
 void MainWindow::pumpMpvEvents() {
