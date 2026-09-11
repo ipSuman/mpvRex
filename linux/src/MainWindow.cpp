@@ -48,31 +48,35 @@ MainWindow::~MainWindow() {
 
 void MainWindow::buildUi() {
     auto* root = new QWidget(this);
+    root->setObjectName(QStringLiteral("root"));
+    root->setStyleSheet(QStringLiteral("QWidget#root{background:#000;}"));
     auto* layout = new QVBoxLayout(root);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
     m_videoWidget = new QWidget(root);
     m_videoWidget->setAttribute(Qt::WA_NativeWindow);
+    m_videoWidget->setFocusPolicy(Qt::StrongFocus);
     m_videoWidget->setStyleSheet(QStringLiteral("background:#000;"));
     m_videoWidget->setMinimumSize(320, 180);
     layout->addWidget(m_videoWidget, 1);
 
-    auto* controls = new QWidget(root);
-    controls->setObjectName(QStringLiteral("controls"));
-    controls->setStyleSheet(QStringLiteral(
+    m_controls = new QWidget(root);
+    m_controls->setObjectName(QStringLiteral("controls"));
+    m_controls->setStyleSheet(QStringLiteral(
         "QWidget#controls{background:#171717;color:#eee;}"
         "QPushButton{background:transparent;color:#eee;border:0;padding:8px 10px;}"
         "QPushButton:hover{background:#303030;border-radius:6px;}"
         "QSlider::groove:horizontal{height:4px;background:#555;border-radius:2px;}"
         "QSlider::handle:horizontal{width:12px;margin:-4px 0;border-radius:6px;background:#ddd;}"
         "QLabel{color:#ddd;}"));
-    auto* controlsLayout = new QVBoxLayout(controls);
+    auto* controlsLayout = new QVBoxLayout(m_controls);
     controlsLayout->setContentsMargins(12, 8, 12, 10);
     controlsLayout->setSpacing(6);
 
-    m_seekSlider = new QSlider(Qt::Horizontal, controls);
+    m_seekSlider = new QSlider(Qt::Horizontal, m_controls);
     m_seekSlider->setRange(0, 1000);
+    m_seekSlider->setTracking(false);
     connect(m_seekSlider, &QSlider::sliderPressed, this, [this] { m_seeking = true; });
     connect(m_seekSlider, &QSlider::sliderReleased, this, [this] {
         m_seeking = false;
@@ -81,40 +85,46 @@ void MainWindow::buildUi() {
     controlsLayout->addWidget(m_seekSlider);
 
     auto* row = new QHBoxLayout();
-    auto* open = new QPushButton(QStringLiteral("Open"), controls);
+    auto* open = new QPushButton(QStringLiteral("Open"), m_controls);
     connect(open, &QPushButton::clicked, this, &MainWindow::openFile);
     row->addWidget(open);
 
-    auto* back = new QPushButton(QStringLiteral("−10s"), controls);
+    auto* back = new QPushButton(QStringLiteral("−10s"), m_controls);
     connect(back, &QPushButton::clicked, this, &MainWindow::seekBackward);
     row->addWidget(back);
 
-    m_playButton = new QPushButton(QStringLiteral("▶"), controls);
+    m_playButton = new QPushButton(QStringLiteral("▶"), m_controls);
     m_playButton->setFixedWidth(52);
     connect(m_playButton, &QPushButton::clicked, this, &MainWindow::togglePause);
     row->addWidget(m_playButton);
 
-    auto* forward = new QPushButton(QStringLiteral("+10s"), controls);
+    auto* forward = new QPushButton(QStringLiteral("+10s"), m_controls);
     connect(forward, &QPushButton::clicked, this, &MainWindow::seekForward);
     row->addWidget(forward);
 
-    m_timeLabel = new QLabel(QStringLiteral("00:00 / 00:00"), controls);
+    m_timeLabel = new QLabel(QStringLiteral("00:00 / 00:00"), m_controls);
     row->addWidget(m_timeLabel);
     row->addStretch();
 
-    row->addWidget(new QLabel(QStringLiteral("Volume"), controls));
-    m_volumeSlider = new QSlider(Qt::Horizontal, controls);
+    row->addWidget(new QLabel(QStringLiteral("Volume"), m_controls));
+    m_volumeSlider = new QSlider(Qt::Horizontal, m_controls);
     m_volumeSlider->setRange(0, 100);
     m_volumeSlider->setValue(100);
     m_volumeSlider->setFixedWidth(130);
     connect(m_volumeSlider, &QSlider::valueChanged, this, &MainWindow::setVolume);
     row->addWidget(m_volumeSlider);
 
+    auto* menu = new QPushButton(QStringLiteral("☰"), m_controls);
+    menu->setToolTip(QStringLiteral("Show or hide controls"));
+    menu->setFixedWidth(42);
+    connect(menu, &QPushButton::clicked, this, &MainWindow::toggleControls);
+    row->addWidget(menu);
+
     controlsLayout->addLayout(row);
-    m_titleLabel = new QLabel(QStringLiteral("No media loaded"), controls);
+    m_titleLabel = new QLabel(QStringLiteral("No media loaded"), m_controls);
     m_titleLabel->setStyleSheet(QStringLiteral("font-weight:600;"));
     controlsLayout->addWidget(m_titleLabel);
-    layout->addWidget(controls);
+    layout->addWidget(m_controls);
     setCentralWidget(root);
 }
 
@@ -234,6 +244,8 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
     default: QMainWindow::keyPressEvent(event); break;
     }
 }
+void MainWindow::toggleControls() { setControlsVisible(m_controls && !m_controls->isVisible()); }
+void MainWindow::setControlsVisible(bool visible) { if (m_controls) m_controls->setVisible(visible); }
 void MainWindow::closeEvent(QCloseEvent* event) {
     if (m_mpv) { const char* args[] = {"quit", nullptr}; mpv_command(m_mpv, args); }
     QMainWindow::closeEvent(event);
