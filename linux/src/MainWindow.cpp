@@ -1,6 +1,7 @@
 #include "MainWindow.h"
 
 #include <QCloseEvent>
+#include <QDir>
 #include <QDragEnterEvent>
 #include <QDropEvent>
 #include <QFileDialog>
@@ -8,16 +9,35 @@
 #include <QHBoxLayout>
 #include <QKeyEvent>
 #include <QLabel>
+#include <QListWidget>
+#include <QListWidgetItem>
 #include <QMimeData>
 #include <QPushButton>
 #include <QSlider>
 #include <QVBoxLayout>
 #include <QWidget>
+#include <QDockWidget>
 
 #include <algorithm>
 #include <cmath>
 
 #include <mpv/client.h>
+
+namespace {
+const QStringList kMediaExtensions = {
+    QStringLiteral("mp4"), QStringLiteral("mkv"), QStringLiteral("webm"),
+    QStringLiteral("avi"), QStringLiteral("mov"), QStringLiteral("m4v"),
+    QStringLiteral("ts"), QStringLiteral("m2ts"), QStringLiteral("flv"),
+    QStringLiteral("wmv"), QStringLiteral("mpg"), QStringLiteral("mpeg"),
+    QStringLiteral("3gp"), QStringLiteral("ogv"), QStringLiteral("mp3"),
+    QStringLiteral("flac"), QStringLiteral("m4a"), QStringLiteral("aac"),
+    QStringLiteral("opus"), QStringLiteral("wav")
+};
+
+bool isMediaFile(const QFileInfo& info) {
+    return info.isFile() && kMediaExtensions.contains(info.suffix().toLower());
+}
+}
 
 MainWindow::MainWindow(const QString& mediaPath, QWidget* parent)
     : QMainWindow(parent) {
@@ -114,6 +134,11 @@ void MainWindow::buildUi() {
     connect(m_volumeSlider, &QSlider::valueChanged, this, &MainWindow::setVolume);
     row->addWidget(m_volumeSlider);
 
+    auto* playlistButton = new QPushButton(QStringLiteral("Playlist"), m_controls);
+    playlistButton->setToolTip(QStringLiteral("Show or hide playlist"));
+    connect(playlistButton, &QPushButton::clicked, this, &MainWindow::togglePlaylist);
+    row->addWidget(playlistButton);
+
     auto* menu = new QPushButton(QStringLiteral("☰"), m_controls);
     menu->setToolTip(QStringLiteral("Show or hide controls"));
     menu->setFixedWidth(42);
@@ -126,6 +151,46 @@ void MainWindow::buildUi() {
     controlsLayout->addWidget(m_titleLabel);
     layout->addWidget(m_controls);
     setCentralWidget(root);
+
+    m_playlistDock = new QDockWidget(QStringLiteral("Playlist"), this);
+    m_playlistDock->setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
+    m_playlistDock->setFeatures(QDockWidget::DockWidgetClosable | QDockWidget::DockWidgetMovable);
+    m_playlistDock->setMinimumWidth(280);
+
+    auto* playlistPanel = new QWidget(m_playlistDock);
+    playlistPanel->setStyleSheet(QStringLiteral(
+        "QWidget{background:#171717;color:#eee;}"
+        "QPushButton{background:#242424;color:#eee;border:0;padding:7px;}"
+        "QPushButton:hover{background:#303030;}"
+        "QListWidget{background:#101010;color:#eee;border:0;}"
+        "QListWidget::item{padding:7px;}"
+        "QListWidget::item:selected{background:#3a3a3a;}"));
+    auto* playlistLayout = new QVBoxLayout(playlistPanel);
+    playlistLayout->setContentsMargins(8, 8, 8, 8);
+    playlistLayout->setSpacing(6);
+
+    m_playlist = new QListWidget(playlistPanel);
+    m_playlist->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_playlist->setAlternatingRowColors(false);
+    connect(m_playlist, &QListWidget::itemDoubleClicked, this,
+            [this](QListWidgetItem*) { playlistActivated(); });
+    playlistLayout->addWidget(m_playlist, 1);
+
+    auto* playlistButtons = new QHBoxLayout();
+    auto* add = new QPushButton(QStringLiteral("+ Files"), playlistPanel);
+    connect(add, &QPushButton::clicked, this, &MainWindow::addFiles);
+    playlistButtons->addWidget(add);
+    auto* folder = new QPushButton(QStringLiteral("+ Folder"), playlistPanel);
+    connect(folder, &QPushButton::clicked, this, &MainWindow::addFolder);
+    playlistButtons->addWidget(folder);
+    auto* clear = new QPushButton(QStringLiteral("Clear"), playlistPanel);
+    connect(clear, &QPushButton::clicked, this, &MainWindow::clearPlaylist);
+    playlistButtons->addWidget(clear);
+    playlistLayout->addLayout(playlistButtons);
+
+    m_playlistDock->setWidget(playlistPanel);
+    addDockWidget(Qt::RightDockWidgetArea, m_playlistDock);
+    m_playlistDock->hide();
 }
 
 bool MainWindow::initializeMpv() {
@@ -148,11 +213,26 @@ bool MainWindow::initializeMpv() {
 void MainWindow::loadFile(const QString& path) {
     if (!m_mpv || path.isEmpty()) return;
     const QString absolute = QFileInfo(path).absoluteFilePath();
+    addToPlaylist(absolute);
     const QByteArray encoded = absolute.toUtf8();
     const char* args[] = {"loadfile", encoded.constData(), "replace", nullptr};
     mpv_command_async(m_mpv, 0, args);
     m_titleLabel->setText(QFileInfo(absolute).fileName());
     setWindowTitle(QStringLiteral("%1 — REX Player").arg(QFileInfo(absolute).fileName()));
+}
+
+void MainWindow::addToPlaylist(const QString& path) {
+    if (!m_playlist || path.isEmpty()) return;
+    for (int i = 0; i < m_playlist->count(); ++i) {
+        if (m_playlist->item(i)->data(Qt::UserRole).toString() == path) {
+            m_playlist->setCurrentRow(i);
+            return;
+        }
+    }
+    auto* item = new QListWidgetItem(QFileInfo(path).fileName(), m_playlist);
+    item->setToolTip(path);
+    item->setData(Qt::UserRole, path);
+    m_playlist->setCurrentItem(item);
 }
 
 void MainWindow::command(const char** args) {
@@ -224,15 +304,48 @@ void MainWindow::openFile() {
     const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("Open video"));
     if (!path.isEmpty()) loadFile(path);
 }
+
+void MainWindow::addFiles() {
+    const QStringList paths = QFileDialog::getOpenFileNames(this, QStringLiteral("Add media files"));
+    if (paths.isEmpty()) return;
+    for (const QString& path : paths) addToPlaylist(QFileInfo(path).absoluteFilePath());
+    if (m_playlist && m_playlist->currentItem()) playlistActivated();
+}
+
+void MainWindow::addFolder() {
+    const QString path = QFileDialog::getExistingDirectory(this, QStringLiteral("Add media folder"));
+    if (path.isEmpty() || !m_playlist) return;
+    QDir dir(path);
+    const QFileInfoList files = dir.entryInfoList(QDir::Files | QDir::Readable, QDir::Name | QDir::IgnoreCase);
+    for (const QFileInfo& info : files) if (isMediaFile(info)) addToPlaylist(info.absoluteFilePath());
+    if (m_playlist->currentItem()) playlistActivated();
+}
+
+void MainWindow::clearPlaylist() {
+    if (m_playlist) m_playlist->clear();
+}
+
+void MainWindow::playlistActivated() {
+    if (!m_playlist || !m_playlist->currentItem()) return;
+    const QString path = m_playlist->currentItem()->data(Qt::UserRole).toString();
+    if (path.isEmpty() || !QFileInfo::exists(path)) return;
+    const QByteArray encoded = path.toUtf8();
+    const char* args[] = {"loadfile", encoded.constData(), "replace", nullptr};
+    if (m_mpv) mpv_command_async(m_mpv, 0, args);
+    m_titleLabel->setText(QFileInfo(path).fileName());
+    setWindowTitle(QStringLiteral("%1 — REX Player").arg(QFileInfo(path).fileName()));
+}
+
 void MainWindow::dragEnterEvent(QDragEnterEvent* event) {
     if (event->mimeData()->hasUrls()) event->acceptProposedAction();
 }
 void MainWindow::dropEvent(QDropEvent* event) {
     const auto urls = event->mimeData()->urls();
-    if (!urls.isEmpty() && urls.first().isLocalFile()) {
-        loadFile(urls.first().toLocalFile());
-        event->acceptProposedAction();
+    for (const auto& url : urls) {
+        if (url.isLocalFile()) addToPlaylist(url.toLocalFile());
     }
+    if (m_playlist && m_playlist->currentItem()) playlistActivated();
+    if (!urls.isEmpty()) event->acceptProposedAction();
 }
 void MainWindow::keyPressEvent(QKeyEvent* event) {
     switch (event->key()) {
@@ -246,6 +359,7 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
 }
 void MainWindow::toggleControls() { setControlsVisible(m_controls && !m_controls->isVisible()); }
 void MainWindow::setControlsVisible(bool visible) { if (m_controls) m_controls->setVisible(visible); }
+void MainWindow::togglePlaylist() { if (m_playlistDock) m_playlistDock->setVisible(!m_playlistDock->isVisible()); }
 void MainWindow::closeEvent(QCloseEvent* event) {
     if (m_mpv) { const char* args[] = {"quit", nullptr}; mpv_command(m_mpv, args); }
     QMainWindow::closeEvent(event);
