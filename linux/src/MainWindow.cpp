@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 
+#include <QAbstractItemView>
 #include <QCloseEvent>
 #include <QDir>
 #include <QDragEnterEvent>
@@ -109,6 +110,12 @@ void MainWindow::buildUi() {
     connect(open, &QPushButton::clicked, this, &MainWindow::openFile);
     row->addWidget(open);
 
+    m_previousButton = new QPushButton(QStringLiteral("⏮"), m_controls);
+    m_previousButton->setToolTip(QStringLiteral("Previous item"));
+    m_previousButton->setFixedWidth(48);
+    connect(m_previousButton, &QPushButton::clicked, this, &MainWindow::playPrevious);
+    row->addWidget(m_previousButton);
+
     auto* back = new QPushButton(QStringLiteral("−10s"), m_controls);
     connect(back, &QPushButton::clicked, this, &MainWindow::seekBackward);
     row->addWidget(back);
@@ -121,6 +128,12 @@ void MainWindow::buildUi() {
     auto* forward = new QPushButton(QStringLiteral("+10s"), m_controls);
     connect(forward, &QPushButton::clicked, this, &MainWindow::seekForward);
     row->addWidget(forward);
+
+    m_nextButton = new QPushButton(QStringLiteral("⏭"), m_controls);
+    m_nextButton->setToolTip(QStringLiteral("Next item"));
+    m_nextButton->setFixedWidth(48);
+    connect(m_nextButton, &QPushButton::clicked, this, &MainWindow::playNext);
+    row->addWidget(m_nextButton);
 
     m_timeLabel = new QLabel(QStringLiteral("00:00 / 00:00"), m_controls);
     row->addWidget(m_timeLabel);
@@ -171,7 +184,6 @@ void MainWindow::buildUi() {
 
     m_playlist = new QListWidget(playlistPanel);
     m_playlist->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_playlist->setAlternatingRowColors(false);
     connect(m_playlist, &QListWidget::itemDoubleClicked, this,
             [this](QListWidgetItem*) { playlistActivated(); });
     playlistLayout->addWidget(m_playlist, 1);
@@ -214,25 +226,48 @@ void MainWindow::loadFile(const QString& path) {
     if (!m_mpv || path.isEmpty()) return;
     const QString absolute = QFileInfo(path).absoluteFilePath();
     addToPlaylist(absolute);
-    const QByteArray encoded = absolute.toUtf8();
-    const char* args[] = {"loadfile", encoded.constData(), "replace", nullptr};
-    mpv_command_async(m_mpv, 0, args);
-    m_titleLabel->setText(QFileInfo(absolute).fileName());
-    setWindowTitle(QStringLiteral("%1 — REX Player").arg(QFileInfo(absolute).fileName()));
+    const int index = m_playlist ? m_playlist->currentRow() : -1;
+    if (index >= 0) playPlaylistIndex(index);
+    else {
+        const QByteArray encoded = absolute.toUtf8();
+        const char* args[] = {"loadfile", encoded.constData(), "replace", nullptr};
+        mpv_command_async(m_mpv, 0, args);
+    }
 }
 
 void MainWindow::addToPlaylist(const QString& path) {
     if (!m_playlist || path.isEmpty()) return;
+    const QString absolute = QFileInfo(path).absoluteFilePath();
     for (int i = 0; i < m_playlist->count(); ++i) {
-        if (m_playlist->item(i)->data(Qt::UserRole).toString() == path) {
+        if (m_playlist->item(i)->data(Qt::UserRole).toString() == absolute) {
             m_playlist->setCurrentRow(i);
             return;
         }
     }
-    auto* item = new QListWidgetItem(QFileInfo(path).fileName(), m_playlist);
-    item->setToolTip(path);
-    item->setData(Qt::UserRole, path);
+    auto* item = new QListWidgetItem(QFileInfo(absolute).fileName(), m_playlist);
+    item->setToolTip(absolute);
+    item->setData(Qt::UserRole, absolute);
     m_playlist->setCurrentItem(item);
+}
+
+void MainWindow::playPlaylistIndex(int index) {
+    if (!m_playlist || index < 0 || index >= m_playlist->count()) return;
+    auto* item = m_playlist->item(index);
+    const QString path = item->data(Qt::UserRole).toString();
+    if (path.isEmpty() || !QFileInfo::exists(path)) return;
+    m_currentPlaylistIndex = index;
+    m_playlist->setCurrentRow(index);
+    const QByteArray encoded = path.toUtf8();
+    const char* args[] = {"loadfile", encoded.constData(), "replace", nullptr};
+    if (m_mpv) mpv_command_async(m_mpv, 0, args);
+    m_titleLabel->setText(QFileInfo(path).fileName());
+    setWindowTitle(QStringLiteral("%1 — REX Player").arg(QFileInfo(path).fileName()));
+}
+
+void MainWindow::syncPlaylistSelection() {
+    if (!m_playlist) return;
+    if (m_currentPlaylistIndex >= 0 && m_currentPlaylistIndex < m_playlist->count())
+        m_playlist->setCurrentRow(m_currentPlaylistIndex);
 }
 
 void MainWindow::command(const char** args) {
@@ -271,7 +306,13 @@ void MainWindow::pumpMpvEvents() {
     while (true) {
         mpv_event* event = mpv_wait_event(m_mpv, 0);
         if (!event || event->event_id == MPV_EVENT_NONE) break;
-        if (event->event_id == MPV_EVENT_SHUTDOWN) { close(); break; }
+        if (event->event_id == MPV_EVENT_END_FILE) {
+            auto* end = static_cast<mpv_event_end_file*>(event->data);
+            if (end && end->reason == MPV_END_FILE_REASON_EOF) playNext();
+        } else if (event->event_id == MPV_EVENT_SHUTDOWN) {
+            close();
+            break;
+        }
     }
 }
 
@@ -288,6 +329,7 @@ void MainWindow::updatePlaybackUi() {
     }
     m_timeLabel->setText(QStringLiteral("%1 / %2").arg(formatTime(pos), formatTime(duration)));
     updatePlayButton(paused != 0);
+    syncPlaylistSelection();
 }
 
 void MainWindow::updatePlayButton(bool paused) { m_playButton->setText(paused ? QStringLiteral("▶") : QStringLiteral("Ⅱ")); }
@@ -308,7 +350,7 @@ void MainWindow::openFile() {
 void MainWindow::addFiles() {
     const QStringList paths = QFileDialog::getOpenFileNames(this, QStringLiteral("Add media files"));
     if (paths.isEmpty()) return;
-    for (const QString& path : paths) addToPlaylist(QFileInfo(path).absoluteFilePath());
+    for (const QString& path : paths) addToPlaylist(path);
     if (m_playlist && m_playlist->currentItem()) playlistActivated();
 }
 
@@ -323,17 +365,24 @@ void MainWindow::addFolder() {
 
 void MainWindow::clearPlaylist() {
     if (m_playlist) m_playlist->clear();
+    m_currentPlaylistIndex = -1;
 }
 
 void MainWindow::playlistActivated() {
     if (!m_playlist || !m_playlist->currentItem()) return;
-    const QString path = m_playlist->currentItem()->data(Qt::UserRole).toString();
-    if (path.isEmpty() || !QFileInfo::exists(path)) return;
-    const QByteArray encoded = path.toUtf8();
-    const char* args[] = {"loadfile", encoded.constData(), "replace", nullptr};
-    if (m_mpv) mpv_command_async(m_mpv, 0, args);
-    m_titleLabel->setText(QFileInfo(path).fileName());
-    setWindowTitle(QStringLiteral("%1 — REX Player").arg(QFileInfo(path).fileName()));
+    playPlaylistIndex(m_playlist->currentRow());
+}
+
+void MainWindow::playPrevious() {
+    if (!m_playlist || m_playlist->count() == 0) return;
+    int index = m_currentPlaylistIndex >= 0 ? m_currentPlaylistIndex : m_playlist->currentRow();
+    if (index > 0) playPlaylistIndex(index - 1);
+}
+
+void MainWindow::playNext() {
+    if (!m_playlist || m_playlist->count() == 0) return;
+    int index = m_currentPlaylistIndex >= 0 ? m_currentPlaylistIndex : m_playlist->currentRow();
+    if (index + 1 < m_playlist->count()) playPlaylistIndex(index + 1);
 }
 
 void MainWindow::dragEnterEvent(QDragEnterEvent* event) {
@@ -352,6 +401,8 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
     case Qt::Key_Space: togglePause(); break;
     case Qt::Key_Left: seekBackward(); break;
     case Qt::Key_Right: seekForward(); break;
+    case Qt::Key_Up: playPrevious(); break;
+    case Qt::Key_Down: playNext(); break;
     case Qt::Key_F11: isFullScreen() ? showNormal() : showFullScreen(); break;
     case Qt::Key_Escape: if (isFullScreen()) showNormal(); break;
     default: QMainWindow::keyPressEvent(event); break;
