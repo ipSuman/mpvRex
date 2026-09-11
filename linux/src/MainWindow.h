@@ -35,6 +35,7 @@ private slots:
     void seekTo(int value);
     void setVolume(int value);
     void updatePlaybackUi();
+    void toggleControls();
 
 private:
     bool initializeMpv();
@@ -46,11 +47,13 @@ private:
     void updatePlayButton(bool paused);
     void showError(const QString& message);
     QString formatTime(double seconds) const;
+    void setControlsVisible(bool visible);
 
     mpv_handle* m_mpv = nullptr;
     QTimer m_eventTimer;
     QTimer m_uiTimer;
     QWidget* m_videoWidget = nullptr;
+    QWidget* m_controls = nullptr;
     QSlider* m_seekSlider = nullptr;
     QSlider* m_volumeSlider = nullptr;
     QLabel* m_timeLabel = nullptr;
