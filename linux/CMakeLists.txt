@@ -22,6 +22,4 @@ target_link_libraries(rex-player PRIVATE
     PkgConfig::LIBMPV
 )
 
-target_compile_definitions(rex-player PRIVATE QT_NO_KEYWORDS)
-
 install(TARGETS rex-player RUNTIME DESTINATION bin)
