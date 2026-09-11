@@ -40,7 +40,7 @@ private:
     bool initializeMpv();
     void buildUi();
     void loadFile(const QString& path);
-    void command(const char* const args[]);
+    void command(const char** args);
     double getPropertyDouble(const char* name) const;
     void setPropertyDouble(const char* name, double value);
     void updatePlayButton(bool paused);
