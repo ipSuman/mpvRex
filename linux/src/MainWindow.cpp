@@ -11,8 +11,6 @@
 #include <QMimeData>
 #include <QPushButton>
 #include <QSlider>
-#include <QStyle>
-#include <QUrl>
 #include <QVBoxLayout>
 #include <QWidget>
 
@@ -27,7 +25,6 @@ MainWindow::MainWindow(const QString& mediaPath, QWidget* parent)
     resize(1200, 760);
     setAcceptDrops(true);
     setFocusPolicy(Qt::StrongFocus);
-
     buildUi();
 
     if (!initializeMpv()) return;
@@ -76,7 +73,6 @@ void MainWindow::buildUi() {
 
     m_seekSlider = new QSlider(Qt::Horizontal, controls);
     m_seekSlider->setRange(0, 1000);
-    m_seekSlider->setSingleStep(1);
     connect(m_seekSlider, &QSlider::sliderPressed, this, [this] { m_seeking = true; });
     connect(m_seekSlider, &QSlider::sliderReleased, this, [this] {
         m_seeking = false;
@@ -85,8 +81,6 @@ void MainWindow::buildUi() {
     controlsLayout->addWidget(m_seekSlider);
 
     auto* row = new QHBoxLayout();
-    row->setSpacing(2);
-
     auto* open = new QPushButton(QStringLiteral("Open"), controls);
     connect(open, &QPushButton::clicked, this, &MainWindow::openFile);
     row->addWidget(open);
@@ -106,11 +100,9 @@ void MainWindow::buildUi() {
 
     m_timeLabel = new QLabel(QStringLiteral("00:00 / 00:00"), controls);
     row->addWidget(m_timeLabel);
-
     row->addStretch();
 
-    auto* volumeLabel = new QLabel(QStringLiteral("Volume"), controls);
-    row->addWidget(volumeLabel);
+    row->addWidget(new QLabel(QStringLiteral("Volume"), controls));
     m_volumeSlider = new QSlider(Qt::Horizontal, controls);
     m_volumeSlider->setRange(0, 100);
     m_volumeSlider->setValue(100);
@@ -122,8 +114,7 @@ void MainWindow::buildUi() {
     m_titleLabel = new QLabel(QStringLiteral("No media loaded"), controls);
     m_titleLabel->setStyleSheet(QStringLiteral("font-weight:600;"));
     controlsLayout->addWidget(m_titleLabel);
-
-    layout->addWidget(controls, 0);
+    layout->addWidget(controls);
     setCentralWidget(root);
 }
 
@@ -139,12 +130,10 @@ bool MainWindow::initializeMpv() {
         showError(QStringLiteral("Could not configure libmpv."));
         return false;
     }
-
     if (mpv_initialize(m_mpv) < 0) {
         showError(QStringLiteral("Could not initialize libmpv."));
         return false;
     }
-
     return true;
 }
 
@@ -166,37 +155,27 @@ void MainWindow::togglePause() {
     const char* args[] = {"cycle", "pause", nullptr};
     command(args);
 }
-
 void MainWindow::seekBackward() {
     const char* args[] = {"seek", "-10", "relative", "exact", nullptr};
     command(args);
 }
-
 void MainWindow::seekForward() {
     const char* args[] = {"seek", "10", "relative", "exact", nullptr};
     command(args);
 }
-
 void MainWindow::seekTo(int value) {
     const double duration = getPropertyDouble("duration");
-    if (duration <= 0) return;
-    setPropertyDouble("time-pos", duration * static_cast<double>(value) / 1000.0);
+    if (duration > 0) setPropertyDouble("time-pos", duration * value / 1000.0);
 }
-
-void MainWindow::setVolume(int value) {
-    setPropertyDouble("volume", value);
-}
+void MainWindow::setVolume(int value) { setPropertyDouble("volume", value); }
 
 double MainWindow::getPropertyDouble(const char* name) const {
     if (!m_mpv) return 0.0;
     double value = 0.0;
-    if (mpv_get_property(m_mpv, name, MPV_FORMAT_DOUBLE, &value) < 0) return 0.0;
-    return value;
+    return mpv_get_property(m_mpv, name, MPV_FORMAT_DOUBLE, &value) >= 0 ? value : 0.0;
 }
-
 void MainWindow::setPropertyDouble(const char* name, double value) {
-    if (!m_mpv) return;
-    mpv_set_property_async(m_mpv, 0, name, MPV_FORMAT_DOUBLE, &value);
+    if (m_mpv) mpv_set_property_async(m_mpv, 0, name, MPV_FORMAT_DOUBLE, &value);
 }
 
 void MainWindow::pumpMpvEvents() {
@@ -212,26 +191,23 @@ void MainWindow::updatePlaybackUi() {
     if (!m_mpv) return;
     const double pos = getPropertyDouble("time-pos");
     const double duration = getPropertyDouble("duration");
-    const bool paused = getPropertyDouble("pause") > 0.5;
+    int paused = 0;
+    if (mpv_get_property(m_mpv, "pause", MPV_FORMAT_FLAG, &paused) < 0) paused = 0;
 
     if (!m_seeking) {
         const int value = duration > 0 ? static_cast<int>(std::clamp(pos / duration, 0.0, 1.0) * 1000.0) : 0;
         m_seekSlider->setValue(value);
     }
     m_timeLabel->setText(QStringLiteral("%1 / %2").arg(formatTime(pos), formatTime(duration)));
-    updatePlayButton(paused);
+    updatePlayButton(paused != 0);
 }
 
-void MainWindow::updatePlayButton(bool paused) {
-    m_playButton->setText(paused ? QStringLiteral("▶") : QStringLiteral("Ⅱ"));
-}
+void MainWindow::updatePlayButton(bool paused) { m_playButton->setText(paused ? QStringLiteral("▶") : QStringLiteral("Ⅱ")); }
 
 QString MainWindow::formatTime(double seconds) const {
     if (!std::isfinite(seconds) || seconds < 0) seconds = 0;
     const int total = static_cast<int>(seconds);
-    const int h = total / 3600;
-    const int m = (total % 3600) / 60;
-    const int s = total % 60;
+    const int h = total / 3600, m = (total % 3600) / 60, s = total % 60;
     return h > 0 ? QStringLiteral("%1:%2:%3").arg(h).arg(m, 2, 10, QLatin1Char('0')).arg(s, 2, 10, QLatin1Char('0'))
                  : QStringLiteral("%1:%2").arg(m).arg(s, 2, 10, QLatin1Char('0'));
 }
@@ -240,11 +216,9 @@ void MainWindow::openFile() {
     const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("Open video"));
     if (!path.isEmpty()) loadFile(path);
 }
-
 void MainWindow::dragEnterEvent(QDragEnterEvent* event) {
     if (event->mimeData()->hasUrls()) event->acceptProposedAction();
 }
-
 void MainWindow::dropEvent(QDropEvent* event) {
     const auto urls = event->mimeData()->urls();
     if (!urls.isEmpty() && urls.first().isLocalFile()) {
@@ -252,26 +226,18 @@ void MainWindow::dropEvent(QDropEvent* event) {
         event->acceptProposedAction();
     }
 }
-
 void MainWindow::keyPressEvent(QKeyEvent* event) {
     switch (event->key()) {
     case Qt::Key_Space: togglePause(); break;
     case Qt::Key_Left: seekBackward(); break;
     case Qt::Key_Right: seekForward(); break;
-    case Qt::Key_F11: showFullScreen(); break;
+    case Qt::Key_F11: isFullScreen() ? showNormal() : showFullScreen(); break;
     case Qt::Key_Escape: if (isFullScreen()) showNormal(); break;
     default: QMainWindow::keyPressEvent(event); break;
     }
 }
-
 void MainWindow::closeEvent(QCloseEvent* event) {
-    if (m_mpv) {
-        const char* args[] = {"quit", nullptr};
-        mpv_command(m_mpv, args);
-    }
+    if (m_mpv) { const char* args[] = {"quit", nullptr}; mpv_command(m_mpv, args); }
     QMainWindow::closeEvent(event);
 }
-
-void MainWindow::showError(const QString& message) {
-    setWindowTitle(QStringLiteral("REX Player — %1").arg(message));
-}
+void MainWindow::showError(const QString& message) { setWindowTitle(QStringLiteral("REX Player — %1").arg(message)); }
