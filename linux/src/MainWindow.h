@@ -5,14 +5,15 @@
 
 class QLabel;
 class QListWidget;
+class QListWidgetItem;
 class QPushButton;
 class QSlider;
 class QWidget;
 class QCloseEvent;
 class QDragEnterEvent;
 class QDropEvent;
-class QKeyEvent;
 class QDockWidget;
+class QKeyEvent;
 
 struct mpv_handle;
 
@@ -43,12 +44,16 @@ private slots:
     void updatePlaybackUi();
     void toggleControls();
     void togglePlaylist();
+    void playPrevious();
+    void playNext();
 
 private:
     bool initializeMpv();
     void buildUi();
     void loadFile(const QString& path);
     void addToPlaylist(const QString& path);
+    void playPlaylistIndex(int index);
+    void syncPlaylistSelection();
     void command(const char** args);
     double getPropertyDouble(const char* name) const;
     void setPropertyDouble(const char* name, double value);
@@ -69,5 +74,8 @@ private:
     QLabel* m_timeLabel = nullptr;
     QLabel* m_titleLabel = nullptr;
     QPushButton* m_playButton = nullptr;
+    QPushButton* m_previousButton = nullptr;
+    QPushButton* m_nextButton = nullptr;
     bool m_seeking = false;
+    int m_currentPlaylistIndex = -1;
 };
