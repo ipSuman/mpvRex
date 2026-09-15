@@ -3,8 +3,6 @@ name: Apply display controls and fullscreen
 on:
   push:
     branches: [linux]
-    paths:
-      - '.github/workflows/apply-display-fullscreen.yml'
   workflow_dispatch:
 
 permissions:
@@ -48,7 +46,6 @@ jobs:
           cpp = Path('linux/src/MainWindow.cpp')
           s = cpp.read_text()
 
-          # Load persisted display settings.
           old = '    m_frameForwardKey = QKeySequence(settings.value(QStringLiteral("controls/frameForward"), m_frameForwardKey.toString()).toString());\n}'
           new = '''    m_frameForwardKey = QKeySequence(settings.value(QStringLiteral("controls/frameForward"), m_frameForwardKey.toString()).toString());
     m_saturation = std::clamp(settings.value(QStringLiteral("display/saturation"), m_saturation).toInt(), -100, 100);
@@ -58,7 +55,6 @@ jobs:
           assert old in s, 'control settings anchor not found'
           s = s.replace(old, new, 1)
 
-          # Start the fullscreen auto-hide timer after the UI exists.
           old = '    buildUi();\n\n    if (!initializeMpv()) return;'
           new = '''    buildUi();
 
@@ -72,7 +68,6 @@ jobs:
           assert old in s, 'constructor anchor not found'
           s = s.replace(old, new, 1)
 
-          # Apply the persisted display values once libmpv is initialized.
           old = '''    if (mpv_initialize(m_mpv) < 0) {
         showError(QStringLiteral("Could not initialize libmpv.")); return false;
     }
@@ -87,7 +82,6 @@ jobs:
           assert old in s, 'mpv initialization anchor not found'
           s = s.replace(old, new, 1)
 
-          # Add the Display button beside Controls.
           old = '''    connect(controlsButton, &QPushButton::clicked, this, &MainWindow::showControlsDialog);
     row->addWidget(controlsButton);
     row->addStretch();'''
@@ -101,7 +95,6 @@ jobs:
           assert old in s, 'display button anchor not found'
           s = s.replace(old, new, 1)
 
-          # Add display information to the diagnostic log.
           old = '        writeDouble("video-zoom", "Video zoom");\n'
           new = '''        writeDouble("video-zoom", "Video zoom");
         writeDouble("saturation", "Saturation");
@@ -111,7 +104,6 @@ jobs:
           assert old in s, 'log display anchor not found'
           s = s.replace(old, new, 1)
 
-          # Replace the F11-only fullscreen handling with a shared toggle and Enter support.
           old = '''    case Qt::Key_F11: isFullScreen() ? showNormal() : showFullScreen(); break;
     case Qt::Key_Escape: if (isFullScreen()) showNormal(); break;'''
           new = '''    case Qt::Key_F11: toggleFullscreen(); break;
@@ -121,7 +113,6 @@ jobs:
           assert old in s, 'fullscreen key anchor not found'
           s = s.replace(old, new, 1)
 
-          # Add mouse-move reveal to the existing video event filter.
           old = 'bool MainWindow::eventFilter(QObject* watched, QEvent* event) {\n    if (watched == m_seekSlider && event->type() == QEvent::MouseButtonPress) {'
           new = '''bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
     if (watched == m_videoWidget && event->type() == QEvent::MouseMove && isFullScreen()) {
@@ -133,7 +124,6 @@ jobs:
           assert old in s, 'event filter anchor not found'
           s = s.replace(old, new, 1)
 
-          # Insert the fullscreen implementation immediately before the existing visibility helper.
           old = 'void MainWindow::setControlsVisible(bool visible) { if (m_controls) m_controls->setVisible(visible); }'
           new = '''void MainWindow::toggleFullscreen() {
     if (isFullScreen()) {
