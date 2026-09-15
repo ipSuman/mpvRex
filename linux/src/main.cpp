@@ -1,9 +1,11 @@
 #include "MainWindow.h"
+#include <clocale>
 
 #include <QApplication>
 #include <QCommandLineParser>
 
 int main(int argc, char* argv[]) {
+    std::setlocale(LC_NUMERIC, "C");
     QApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("REX Player"));
     QCoreApplication::setApplicationVersion(QStringLiteral("0.1.0"));
