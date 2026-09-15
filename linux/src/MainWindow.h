@@ -119,6 +119,7 @@ private:
     double m_abLoopEnd = -1.0;
     int m_currentPlaylistIndex = -1;
     bool m_autoplayPlaylist = true;
+    bool m_autoplayTransitionPending = false;
 
     QString m_seekWheelMode = QStringLiteral("wheel");
     QString m_zoomWheelMode = QStringLiteral("alt-wheel");
