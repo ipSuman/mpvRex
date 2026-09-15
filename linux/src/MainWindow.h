@@ -55,6 +55,7 @@ private slots:
     void playNext();
     void showTracksMenu();
     void cutAbSelection();
+    void saveLogReport();
 
 private:
     bool initializeMpv();
@@ -102,6 +103,7 @@ private:
     QPushButton* m_seekBackButton = nullptr;
     QPushButton* m_seekForwardButton = nullptr;
     QPushButton* m_cutAbButton = nullptr;
+    QPushButton* m_logButton = nullptr;
     QProcess* m_cutProcess = nullptr;
     QString m_cutOutputPath;
     bool m_seeking = false;
