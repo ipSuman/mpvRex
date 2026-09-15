@@ -27,6 +27,9 @@ jobs:
       - name: Apply autoplay v2 fix
         run: python3 linux/fix_autoplay_v2.py
 
+      - name: Apply double-tap seek update
+        run: python3 linux/fix_double_tap_seek.py
+
       - name: Configure
         run: cmake -S linux -B build-linux -DCMAKE_BUILD_TYPE=Release
 
@@ -46,12 +49,12 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -f linux/fix_autoplay_v2.py .github/workflows/fix-autoplay-v2.yml linux/autoplay-v2-trigger.txt
-          git add linux/src/MainWindow.h linux/src/MainWindow.cpp linux/fix_autoplay_v2.py .github/workflows/fix-autoplay-v2.yml linux/autoplay-v2-trigger.txt
+          rm -f linux/fix_autoplay_v2.py linux/fix_double_tap_seek.py .github/workflows/fix-autoplay-v2.yml linux/autoplay-v2-trigger.txt
+          git add linux/src/MainWindow.h linux/src/MainWindow.cpp linux/fix_autoplay_v2.py linux/fix_double_tap_seek.py .github/workflows/fix-autoplay-v2.yml linux/autoplay-v2-trigger.txt
           if git diff --cached --quiet; then
             echo "No source changes to commit."
           else
-            git commit -m "Fix Linux playlist autoplay v2"
+            git commit -m "Set double-tap seek to fixed 10 seconds"
             git push
           fi
 
