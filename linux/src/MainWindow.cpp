@@ -26,6 +26,7 @@
 #include <QPushButton>
 #include <QSettings>
 #include <QSlider>
+#include <QSpinBox>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QWidget>
@@ -175,16 +176,20 @@ void MainWindow::buildUi() {
     m_previousButton->setFixedWidth(48);
     connect(m_previousButton, &QPushButton::clicked, this, &MainWindow::playPrevious);
     row->addWidget(m_previousButton);
-    auto* back = new QPushButton(QStringLiteral("−10s"), m_controls);
-    connect(back, &QPushButton::clicked, this, &MainWindow::seekBackward);
-    row->addWidget(back);
+    m_seekBackButton = new QPushButton(m_controls);
+    m_seekBackButton->setFixedWidth(60);
+    m_seekBackButton->setToolTip(QStringLiteral("Seek backward by the configured duration"));
+    connect(m_seekBackButton, &QPushButton::clicked, this, &MainWindow::seekBackward);
+    row->addWidget(m_seekBackButton);
     m_playButton = new QPushButton(QStringLiteral("▶"), m_controls);
     m_playButton->setFixedWidth(52);
     connect(m_playButton, &QPushButton::clicked, this, &MainWindow::togglePause);
     row->addWidget(m_playButton);
-    auto* forward = new QPushButton(QStringLiteral("+10s"), m_controls);
-    connect(forward, &QPushButton::clicked, this, &MainWindow::seekForward);
-    row->addWidget(forward);
+    m_seekForwardButton = new QPushButton(m_controls);
+    m_seekForwardButton->setFixedWidth(60);
+    m_seekForwardButton->setToolTip(QStringLiteral("Seek forward by the configured duration"));
+    connect(m_seekForwardButton, &QPushButton::clicked, this, &MainWindow::seekForward);
+    row->addWidget(m_seekForwardButton);
     m_nextButton = new QPushButton(QStringLiteral("⏭"), m_controls);
     m_nextButton->setToolTip(QStringLiteral("Next item"));
     m_nextButton->setFixedWidth(48);
@@ -229,6 +234,7 @@ void MainWindow::buildUi() {
     m_titleLabel = new QLabel(QStringLiteral("No media loaded"), m_controls);
     m_titleLabel->setStyleSheet(QStringLiteral("font-weight:600;"));
     controlsLayout->addWidget(m_titleLabel);
+    updateSeekButtonLabels();
     layout->addWidget(m_controls);
     setCentralWidget(root);
 
@@ -274,6 +280,9 @@ void MainWindow::loadControlSettings() {
     m_volumeWheelMode = settings.value(QStringLiteral("controls/volumeWheel"), m_volumeWheelMode).toString();
     m_panButton = static_cast<Qt::MouseButton>(settings.value(QStringLiteral("controls/panButton"), static_cast<int>(m_panButton)).toInt());
     m_doubleClickButton = static_cast<Qt::MouseButton>(settings.value(QStringLiteral("controls/doubleClickButton"), static_cast<int>(m_doubleClickButton)).toInt());
+    m_seekDurationMinutes = std::clamp(settings.value(QStringLiteral("controls/seekDurationMinutes"), m_seekDurationMinutes).toInt(), 1, 120);
+    m_seekBackwardKey = QKeySequence(settings.value(QStringLiteral("controls/seekBackward"), m_seekBackwardKey.toString()).toString());
+    m_seekForwardKey = QKeySequence(settings.value(QStringLiteral("controls/seekForward"), m_seekForwardKey.toString()).toString());
     m_loopAKey = QKeySequence(settings.value(QStringLiteral("controls/loopA"), m_loopAKey.toString()).toString());
     m_loopBKey = QKeySequence(settings.value(QStringLiteral("controls/loopB"), m_loopBKey.toString()).toString());
     m_loopClearKey = QKeySequence(settings.value(QStringLiteral("controls/loopClear"), m_loopClearKey.toString()).toString());
@@ -288,11 +297,18 @@ void MainWindow::showControlsDialog() {
     QDialog dialog(this);
     dialog.setWindowTitle(QStringLiteral("Controls"));
     dialog.setModal(true);
-    dialog.resize(520, 560);
+    dialog.resize(520, 650);
 
     auto* mainLayout = new QVBoxLayout(&dialog);
     auto* form = new QFormLayout();
     form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+
+    auto* seekDuration = new QSpinBox(&dialog);
+    seekDuration->setRange(1, 120);
+    seekDuration->setSingleStep(1);
+    seekDuration->setSuffix(QStringLiteral(" min"));
+    seekDuration->setValue(m_seekDurationMinutes);
+    form->addRow(QStringLiteral("Seek duration"), seekDuration);
 
     auto* seekWheel = new QComboBox(&dialog);
     addWheelModes(seekWheel);
@@ -330,6 +346,8 @@ void MainWindow::showControlsDialog() {
     mainLayout->addWidget(new QLabel(QStringLiteral("Keyboard shortcuts"), &dialog));
 
     auto* keyForm = new QFormLayout();
+    auto* seekBack = new QKeySequenceEdit(m_seekBackwardKey, &dialog);
+    auto* seekForward = new QKeySequenceEdit(m_seekForwardKey, &dialog);
     auto* loopA = new QKeySequenceEdit(m_loopAKey, &dialog);
     auto* loopB = new QKeySequenceEdit(m_loopBKey, &dialog);
     auto* loopClear = new QKeySequenceEdit(m_loopClearKey, &dialog);
@@ -338,8 +356,10 @@ void MainWindow::showControlsDialog() {
     auto* zoomReset = new QKeySequenceEdit(m_zoomResetKey, &dialog);
     auto* frameBack = new QKeySequenceEdit(m_frameBackKey, &dialog);
     auto* frameForward = new QKeySequenceEdit(m_frameForwardKey, &dialog);
-    const QList<QKeySequenceEdit*> edits = {loopA, loopB, loopClear, zoomIn, zoomOut, zoomReset, frameBack, frameForward};
+    const QList<QKeySequenceEdit*> edits = {seekBack, seekForward, loopA, loopB, loopClear, zoomIn, zoomOut, zoomReset, frameBack, frameForward};
     for (auto* edit : edits) edit->setClearButtonEnabled(true);
+    keyForm->addRow(QStringLiteral("Left Arrow → Seek backward"), seekBack);
+    keyForm->addRow(QStringLiteral("Right Arrow → Seek forward"), seekForward);
     keyForm->addRow(QStringLiteral("A → Loop start"), loopA);
     keyForm->addRow(QStringLiteral("B → Loop end"), loopB);
     keyForm->addRow(QStringLiteral("L → Clear loop"), loopClear);
@@ -350,7 +370,7 @@ void MainWindow::showControlsDialog() {
     keyForm->addRow(QStringLiteral(". → Next frame"), frameForward);
     mainLayout->addLayout(keyForm);
 
-    auto* note = new QLabel(QStringLiteral("Changes are saved for the next launch. Clear a shortcut to disable it."), &dialog);
+    auto* note = new QLabel(QStringLiteral("Seek duration applies to the seek buttons, arrow keys, wheel seek and double-click seek zones. Changes are saved for the next launch. Clear a shortcut to disable it."), &dialog);
     note->setWordWrap(true);
     mainLayout->addWidget(note);
 
@@ -359,15 +379,18 @@ void MainWindow::showControlsDialog() {
     mainLayout->addWidget(buttons);
 
     connect(reset, &QPushButton::clicked, &dialog, [&] {
+        seekDuration->setValue(1);
         selectData(seekWheel, QStringLiteral("wheel"));
         selectData(zoomWheel, QStringLiteral("alt-wheel"));
         selectData(volumeWheel, QStringLiteral("ctrl-wheel"));
         selectData(panButton, static_cast<int>(Qt::MiddleButton));
         selectData(doubleClickButton, static_cast<int>(Qt::LeftButton));
+        seekBack->setKeySequence(QKeySequence(Qt::Key_Left));
+        seekForward->setKeySequence(QKeySequence(Qt::Key_Right));
         loopA->setKeySequence(QKeySequence(Qt::Key_A));
         loopB->setKeySequence(QKeySequence(Qt::Key_B));
         loopClear->setKeySequence(QKeySequence(Qt::Key_L));
-        zoomIn->setKeySequence(QKeySequence(Qt::Key_Plus));
+        zoomIn->setKeySequence(QKeySequence(Qt::SHIFT | Qt::Key_Equal));
         zoomOut->setKeySequence(QKeySequence(Qt::Key_Minus));
         zoomReset->setKeySequence(QKeySequence(Qt::Key_Z));
         frameBack->setKeySequence(QKeySequence(Qt::Key_Comma));
@@ -385,11 +408,14 @@ void MainWindow::showControlsDialog() {
                 }
             }
         }
+        m_seekDurationMinutes = seekDuration->value();
         m_seekWheelMode = seekWheel->currentData().toString();
         m_zoomWheelMode = zoomWheel->currentData().toString();
         m_volumeWheelMode = volumeWheel->currentData().toString();
         m_panButton = static_cast<Qt::MouseButton>(panButton->currentData().toInt());
         m_doubleClickButton = static_cast<Qt::MouseButton>(doubleClickButton->currentData().toInt());
+        m_seekBackwardKey = seekBack->keySequence();
+        m_seekForwardKey = seekForward->keySequence();
         m_loopAKey = loopA->keySequence();
         m_loopBKey = loopB->keySequence();
         m_loopClearKey = loopClear->keySequence();
@@ -400,11 +426,14 @@ void MainWindow::showControlsDialog() {
         m_frameForwardKey = frameForward->keySequence();
 
         QSettings settings(QStringLiteral("REX Player"), QStringLiteral("REX Player"));
+        settings.setValue(QStringLiteral("controls/seekDurationMinutes"), m_seekDurationMinutes);
         settings.setValue(QStringLiteral("controls/seekWheel"), m_seekWheelMode);
         settings.setValue(QStringLiteral("controls/zoomWheel"), m_zoomWheelMode);
         settings.setValue(QStringLiteral("controls/volumeWheel"), m_volumeWheelMode);
         settings.setValue(QStringLiteral("controls/panButton"), static_cast<int>(m_panButton));
         settings.setValue(QStringLiteral("controls/doubleClickButton"), static_cast<int>(m_doubleClickButton));
+        settings.setValue(QStringLiteral("controls/seekBackward"), m_seekBackwardKey.toString());
+        settings.setValue(QStringLiteral("controls/seekForward"), m_seekForwardKey.toString());
         settings.setValue(QStringLiteral("controls/loopA"), m_loopAKey.toString());
         settings.setValue(QStringLiteral("controls/loopB"), m_loopBKey.toString());
         settings.setValue(QStringLiteral("controls/loopClear"), m_loopClearKey.toString());
@@ -414,6 +443,7 @@ void MainWindow::showControlsDialog() {
         settings.setValue(QStringLiteral("controls/frameBack"), m_frameBackKey.toString());
         settings.setValue(QStringLiteral("controls/frameForward"), m_frameForwardKey.toString());
         settings.sync();
+        updateSeekButtonLabels();
         dialog.accept();
     });
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
@@ -490,13 +520,14 @@ void MainWindow::syncPlaylistSelection() {
 
 void MainWindow::command(const char** args) { if (m_mpv) mpv_command_async(m_mpv, 0, args); }
 void MainWindow::togglePause() { const char* args[] = {"cycle", "pause", nullptr}; command(args); }
-void MainWindow::seekBackward() { const char* args[] = {"seek", "-10", "relative", "exact", nullptr}; command(args); }
-void MainWindow::seekForward() { const char* args[] = {"seek", "10", "relative", "exact", nullptr}; command(args); }
+void MainWindow::seekBackward() { const QByteArray seconds = QByteArray::number(-m_seekDurationMinutes * 60); const char* args[] = {"seek", seconds.constData(), "relative", "exact", nullptr}; command(args); }
+void MainWindow::seekForward() { const QByteArray seconds = QByteArray::number(m_seekDurationMinutes * 60); const char* args[] = {"seek", seconds.constData(), "relative", "exact", nullptr}; command(args); }
 void MainWindow::seekTo(int value) { const double duration = getPropertyDouble("duration"); if (duration > 0) setPropertyDouble("time-pos", duration * value / 1000.0); }
 void MainWindow::setVolume(int value) { setPropertyDouble("volume", value); }
 double MainWindow::getPropertyDouble(const char* name) const { if (!m_mpv) return 0.0; double value = 0.0; return mpv_get_property(m_mpv, name, MPV_FORMAT_DOUBLE, &value) >= 0 ? value : 0.0; }
 QString MainWindow::getPropertyString(const char* name) const { if (!m_mpv) return {}; char* value = nullptr; if (mpv_get_property(m_mpv, name, MPV_FORMAT_STRING, &value) < 0 || !value) return {}; const QString result = QString::fromUtf8(value); mpv_free(value); return result; }
 void MainWindow::setPropertyDouble(const char* name, double value) { if (m_mpv) mpv_set_property_async(m_mpv, 0, name, MPV_FORMAT_DOUBLE, &value); }
+void MainWindow::updateSeekButtonLabels() { if (!m_seekBackButton || !m_seekForwardButton) return; const QString label = QStringLiteral("%1m").arg(m_seekDurationMinutes); m_seekBackButton->setText(QStringLiteral("−%1").arg(label)); m_seekForwardButton->setText(QStringLiteral("+%1").arg(label)); }
 void MainWindow::adjustVideoZoom(double amount) { setPropertyDouble("video-zoom", std::clamp(getPropertyDouble("video-zoom") + amount, -2.0, 3.0)); }
 void MainWindow::resetVideoTransform() { setPropertyDouble("video-zoom", 0.0); setPropertyDouble("video-pan-x", 0.0); setPropertyDouble("video-pan-y", 0.0); m_videoPanX = 0.0; m_videoPanY = 0.0; }
 void MainWindow::setAbLoopStart() { if (getPropertyDouble("duration") <= 0.0) return; const double position = getPropertyDouble("time-pos"); clearAbLoop(); m_abLoopStart = position; setPropertyDouble("ab-loop-a", position); updateAbLoopLabel(); }
@@ -639,6 +670,8 @@ bool MainWindow::keyMatches(QKeyEvent* event, const QKeySequence& sequence) cons
 }
 
 void MainWindow::keyPressEvent(QKeyEvent* event) {
+    if (keyMatches(event, m_seekBackwardKey)) { seekBackward(); event->accept(); return; }
+    if (keyMatches(event, m_seekForwardKey)) { seekForward(); event->accept(); return; }
     if (keyMatches(event, m_loopAKey)) { setAbLoopStart(); event->accept(); return; }
     if (keyMatches(event, m_loopBKey)) { setAbLoopEnd(); event->accept(); return; }
     if (keyMatches(event, m_loopClearKey)) { clearAbLoop(); event->accept(); return; }
@@ -650,8 +683,6 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
 
     switch (event->key()) {
     case Qt::Key_Space: togglePause(); break;
-    case Qt::Key_Left: seekBackward(); break;
-    case Qt::Key_Right: seekForward(); break;
     case Qt::Key_Up: playPrevious(); break;
     case Qt::Key_Down: playNext(); break;
     case Qt::Key_F11: isFullScreen() ? showNormal() : showFullScreen(); break;
@@ -721,8 +752,8 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
             return true;
         }
         if (wheelModeMatches(m_seekWheelMode, modifiers)) {
-            const char* args[] = {"seek", delta > 0 ? "5" : "-5", "relative", "exact", nullptr};
-            command(args);
+            if (delta > 0) seekForward();
+            else seekBackward();
             return true;
         }
         return false;
