@@ -336,6 +336,17 @@ double MainWindow::getPropertyDouble(const char* name) const {
 void MainWindow::setPropertyDouble(const char* name, double value) {
     if (m_mpv) mpv_set_property_async(m_mpv, 0, name, MPV_FORMAT_DOUBLE, &value);
 }
+void MainWindow::adjustVideoZoom(double amount) {
+    const double zoom = std::clamp(getPropertyDouble("video-zoom") + amount, -2.0, 3.0);
+    setPropertyDouble("video-zoom", zoom);
+}
+void MainWindow::resetVideoTransform() {
+    setPropertyDouble("video-zoom", 0.0);
+    setPropertyDouble("video-pan-x", 0.0);
+    setPropertyDouble("video-pan-y", 0.0);
+    m_videoPanX = 0.0;
+    m_videoPanY = 0.0;
+}
 
 void MainWindow::showTracksMenu() {
     if (!m_mpv) return;
@@ -546,6 +557,10 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
     case Qt::Key_Right: seekForward(); break;
     case Qt::Key_Up: playPrevious(); break;
     case Qt::Key_Down: playNext(); break;
+    case Qt::Key_Plus:
+    case Qt::Key_Equal: adjustVideoZoom(0.1); break;
+    case Qt::Key_Minus: adjustVideoZoom(-0.1); break;
+    case Qt::Key_Z: resetVideoTransform(); break;
     case Qt::Key_F11: isFullScreen() ? showNormal() : showFullScreen(); break;
     case Qt::Key_Escape: if (isFullScreen()) showNormal(); break;
     default: QMainWindow::keyPressEvent(event); break;
@@ -566,13 +581,47 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
         return true;
     }
 
+    if (event->type() == QEvent::MouseButtonPress) {
+        const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() == Qt::MiddleButton) {
+            m_panningVideo = true;
+            m_panStart = mouseEvent->position();
+            m_videoPanX = getPropertyDouble("video-pan-x");
+            m_videoPanY = getPropertyDouble("video-pan-y");
+            return true;
+        }
+    }
+
+    if (event->type() == QEvent::MouseMove && m_panningVideo) {
+        const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        const QPointF delta = mouseEvent->position() - m_panStart;
+        const double width = std::max(1, m_videoWidget->width());
+        const double height = std::max(1, m_videoWidget->height());
+        m_videoPanX = std::clamp(m_videoPanX + delta.x() / width, -1.0, 1.0);
+        m_videoPanY = std::clamp(m_videoPanY + delta.y() / height, -1.0, 1.0);
+        setPropertyDouble("video-pan-x", m_videoPanX);
+        setPropertyDouble("video-pan-y", m_videoPanY);
+        m_panStart = mouseEvent->position();
+        return true;
+    }
+
+    if (event->type() == QEvent::MouseButtonRelease) {
+        const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() == Qt::MiddleButton && m_panningVideo) {
+            m_panningVideo = false;
+            return true;
+        }
+    }
+
     if (event->type() == QEvent::Wheel) {
         const auto* wheelEvent = static_cast<QWheelEvent*>(event);
         const int delta = !wheelEvent->angleDelta().isNull()
             ? wheelEvent->angleDelta().y() : wheelEvent->pixelDelta().y();
         if (delta == 0) return false;
 
-        if (wheelEvent->modifiers().testFlag(Qt::ControlModifier)) {
+        if (wheelEvent->modifiers().testFlag(Qt::AltModifier)) {
+            adjustVideoZoom(delta > 0 ? 0.1 : -0.1);
+        } else if (wheelEvent->modifiers().testFlag(Qt::ControlModifier)) {
             m_volumeSlider->setValue(std::clamp(m_volumeSlider->value() + (delta > 0 ? 5 : -5), 0, 100));
         } else {
             const char* args[] = {"seek", delta > 0 ? "5" : "-5", "relative", "exact", nullptr};

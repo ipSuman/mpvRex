@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QMainWindow>
+#include <QPointF>
 #include <QTimer>
 
 class QLabel;
@@ -61,6 +62,8 @@ private:
     double getPropertyDouble(const char* name) const;
     void setPropertyDouble(const char* name, double value);
     void updatePlayButton(bool paused);
+    void adjustVideoZoom(double amount);
+    void resetVideoTransform();
     void showError(const QString& message);
     QString formatTime(double seconds) const;
     void setControlsVisible(bool visible);
@@ -80,5 +83,9 @@ private:
     QPushButton* m_previousButton = nullptr;
     QPushButton* m_nextButton = nullptr;
     bool m_seeking = false;
+    bool m_panningVideo = false;
+    QPointF m_panStart;
+    double m_videoPanX = 0.0;
+    double m_videoPanY = 0.0;
     int m_currentPlaylistIndex = -1;
 };

@@ -56,3 +56,6 @@ On the video surface:
 - Double-click the center to pause or resume.
 - Scroll to seek 5 seconds at a time.
 - Hold `Ctrl` while scrolling to adjust volume.
+- Hold `Alt` while scrolling to zoom the video.
+- Drag with the middle mouse button to pan a zoomed video.
+- Press `+` or `-` to zoom, and `Z` to reset zoom and pan.
