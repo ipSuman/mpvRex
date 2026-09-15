@@ -562,10 +562,14 @@ void MainWindow::addToPlaylist(const QString& path) {
             return;
         }
     }
+    const int currentRow = m_playlist->currentRow();
     auto* item = new QListWidgetItem(QFileInfo(absolute).fileName(), m_playlist);
     item->setToolTip(absolute);
     item->setData(Qt::UserRole, absolute);
-    m_playlist->setCurrentItem(item);
+    if (currentRow >= 0)
+        m_playlist->setCurrentRow(currentRow);
+    else
+        m_playlist->setCurrentItem(item);
 }
 
 void MainWindow::playPlaylistIndex(int index) {
@@ -918,7 +922,13 @@ void MainWindow::pumpMpvEvents() {
         if (!event || event->event_id == MPV_EVENT_NONE) break;
         if (event->event_id == MPV_EVENT_END_FILE) {
             auto* end = static_cast<mpv_event_end_file*>(event->data);
-            if (end && end->reason == MPV_END_FILE_REASON_EOF && m_autoplayPlaylist) playNext();
+            if (end && end->reason == MPV_END_FILE_REASON_EOF && m_autoplayPlaylist) {
+                const int finishedIndex = m_currentPlaylistIndex;
+                QTimer::singleShot(0, this, [this, finishedIndex] {
+                    if (m_autoplayPlaylist && m_currentPlaylistIndex == finishedIndex)
+                        playNext();
+                });
+            }
         } else if (event->event_id == MPV_EVENT_SHUTDOWN) {
             close();
             break;
@@ -942,14 +952,35 @@ void MainWindow::updatePlaybackUi() {
 void MainWindow::updatePlayButton(bool paused) { m_playButton->setText(paused ? QStringLiteral("▶") : QStringLiteral("Ⅱ")); }
 QString MainWindow::formatTime(double seconds) const { if (!std::isfinite(seconds) || seconds < 0) seconds = 0; const int total = static_cast<int>(seconds); const int h = total / 3600, m = (total % 3600) / 60, s = total % 60; return h > 0 ? QStringLiteral("%1:%2:%3").arg(h).arg(m,2,10,QLatin1Char('0')).arg(s,2,10,QLatin1Char('0')) : QStringLiteral("%1:%2").arg(m).arg(s,2,10,QLatin1Char('0')); }
 void MainWindow::openFile() { const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("Open video")); if (!path.isEmpty()) loadFile(path); }
-void MainWindow::addFiles() { const QStringList paths = QFileDialog::getOpenFileNames(this, QStringLiteral("Add media files")); if (paths.isEmpty()) return; for (const QString& path : paths) addToPlaylist(path); if (m_playlist && m_playlist->currentItem()) playlistActivated(); }
-void MainWindow::addFolder() { const QString path = QFileDialog::getExistingDirectory(this, QStringLiteral("Add media folder")); if (path.isEmpty() || !m_playlist) return; QDir dir(path); const QFileInfoList files = dir.entryInfoList(QDir::Files | QDir::Readable, QDir::Name | QDir::IgnoreCase); for (const QFileInfo& info : files) if (isMediaFile(info)) addToPlaylist(info.absoluteFilePath()); if (m_playlist->currentItem()) playlistActivated(); }
+void MainWindow::addFiles() {
+    const QStringList paths = QFileDialog::getOpenFileNames(this, QStringLiteral("Add media files"));
+    if (paths.isEmpty() || !m_playlist) return;
+    const bool wasEmpty = m_playlist->count() == 0;
+    for (const QString& path : paths) addToPlaylist(path);
+    if (wasEmpty && m_playlist->currentItem()) playlistActivated();
+}
+void MainWindow::addFolder() {
+    const QString path = QFileDialog::getExistingDirectory(this, QStringLiteral("Add media folder"));
+    if (path.isEmpty() || !m_playlist) return;
+    const bool wasEmpty = m_playlist->count() == 0;
+    QDir dir(path);
+    const QFileInfoList files = dir.entryInfoList(QDir::Files | QDir::Readable, QDir::Name | QDir::IgnoreCase);
+    for (const QFileInfo& info : files) if (isMediaFile(info)) addToPlaylist(info.absoluteFilePath());
+    if (wasEmpty && m_playlist->currentItem()) playlistActivated();
+}
 void MainWindow::clearPlaylist() { if (m_playlist) m_playlist->clear(); m_currentPlaylistIndex = -1; }
 void MainWindow::playlistActivated() { if (m_playlist && m_playlist->currentItem()) playPlaylistIndex(m_playlist->currentRow()); }
 void MainWindow::playPrevious() { if (!m_playlist || m_playlist->count() == 0) return; int index = m_currentPlaylistIndex >= 0 ? m_currentPlaylistIndex : m_playlist->currentRow(); if (index > 0) playPlaylistIndex(index - 1); }
 void MainWindow::playNext() { if (!m_playlist || m_playlist->count() == 0) return; int index = m_currentPlaylistIndex >= 0 ? m_currentPlaylistIndex : m_playlist->currentRow(); if (index + 1 < m_playlist->count()) playPlaylistIndex(index + 1); }
 void MainWindow::dragEnterEvent(QDragEnterEvent* event) { if (event->mimeData()->hasUrls()) event->acceptProposedAction(); }
-void MainWindow::dropEvent(QDropEvent* event) { const auto urls = event->mimeData()->urls(); for (const auto& url : urls) if (url.isLocalFile()) addToPlaylist(url.toLocalFile()); if (m_playlist && m_playlist->currentItem()) playlistActivated(); if (!urls.isEmpty()) event->acceptProposedAction(); }
+void MainWindow::dropEvent(QDropEvent* event) {
+    const auto urls = event->mimeData()->urls();
+    if (!m_playlist) return;
+    const bool wasEmpty = m_playlist->count() == 0;
+    for (const auto& url : urls) if (url.isLocalFile()) addToPlaylist(url.toLocalFile());
+    if (wasEmpty && m_playlist->currentItem()) playlistActivated();
+    if (!urls.isEmpty()) event->acceptProposedAction();
+}
 
 bool MainWindow::keyMatches(QKeyEvent* event, const QKeySequence& sequence) const {
     if (sequence.isEmpty()) return false;
