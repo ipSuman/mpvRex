@@ -2,6 +2,7 @@
 
 #include <QMainWindow>
 #include <QPointF>
+#include <QKeySequence>
 #include <QTimer>
 
 class QLabel;
@@ -48,6 +49,7 @@ private slots:
     void toggleControls();
     void togglePlaylist();
     void toggleHardwareDecoding();
+    void showControlsDialog();
     void playPrevious();
     void playNext();
     void showTracksMenu();
@@ -75,6 +77,8 @@ private:
     void showError(const QString& message);
     QString formatTime(double seconds) const;
     void setControlsVisible(bool visible);
+    void loadControlSettings();
+    bool keyMatches(QKeyEvent* event, const QKeySequence& sequence) const;
 
     mpv_handle* m_mpv = nullptr;
     QTimer m_eventTimer;
@@ -100,4 +104,19 @@ private:
     double m_abLoopStart = -1.0;
     double m_abLoopEnd = -1.0;
     int m_currentPlaylistIndex = -1;
+
+    QString m_seekWheelMode = QStringLiteral("wheel");
+    QString m_zoomWheelMode = QStringLiteral("alt-wheel");
+    QString m_volumeWheelMode = QStringLiteral("ctrl-wheel");
+    Qt::MouseButton m_panButton = Qt::MiddleButton;
+    Qt::MouseButton m_doubleClickButton = Qt::LeftButton;
+    bool m_doubleClickZones = true;
+    QKeySequence m_loopAKey = QKeySequence(Qt::Key_A);
+    QKeySequence m_loopBKey = QKeySequence(Qt::Key_B);
+    QKeySequence m_loopClearKey = QKeySequence(Qt::Key_L);
+    QKeySequence m_zoomInKey = QKeySequence(Qt::Key_Plus);
+    QKeySequence m_zoomOutKey = QKeySequence(Qt::Key_Minus);
+    QKeySequence m_zoomResetKey = QKeySequence(Qt::Key_Z);
+    QKeySequence m_frameBackKey = QKeySequence(Qt::Key_Comma);
+    QKeySequence m_frameForwardKey = QKeySequence(Qt::Key_Period);
 };
