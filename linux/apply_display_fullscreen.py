@@ -82,11 +82,11 @@ if 'QStringLiteral("Display")' not in s:
     s = s.replace(old, new, 1)
 
 if 'writeDouble("saturation", "Saturation")' not in s:
-    old = '        writeDouble("video-zoom", "Video zoom");\n'
-    new = '''        writeDouble("video-zoom", "Video zoom");
-        writeDouble("saturation", "Saturation");
-        writeDouble("brightness", "Brightness");
-        writeDouble("contrast", "Contrast");
+    old = '    writeDouble("video-zoom", "Video zoom");\n'
+    new = '''    writeDouble("video-zoom", "Video zoom");
+    writeDouble("saturation", "Saturation");
+    writeDouble("brightness", "Brightness");
+    writeDouble("contrast", "Contrast");
 '''
     if old not in s:
         raise SystemExit('log display anchor not found')
