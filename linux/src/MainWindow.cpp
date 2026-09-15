@@ -3,6 +3,7 @@
 #include <QAbstractItemView>
 #include <QAction>
 #include <QCloseEvent>
+#include <QCheckBox>
 #include <QCoreApplication>
 #include <QComboBox>
 #include <QDir>
@@ -317,6 +318,16 @@ void MainWindow::buildUi() {
     connect(clear, &QPushButton::clicked, this, &MainWindow::clearPlaylist);
     playlistButtons->addWidget(clear);
     playlistLayout->addLayout(playlistButtons);
+    m_autoplayCheck = new QCheckBox(QStringLiteral("Autoplay next item"), playlistPanel);
+    m_autoplayCheck->setChecked(m_autoplayPlaylist);
+    m_autoplayCheck->setToolTip(QStringLiteral("Automatically play the next playlist item when the current item reaches the end."));
+    connect(m_autoplayCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        m_autoplayPlaylist = checked;
+        QSettings settings(QStringLiteral("REX Player"), QStringLiteral("REX Player"));
+        settings.setValue(QStringLiteral("playlist/autoplay"), checked);
+        settings.sync();
+    });
+    playlistLayout->addWidget(m_autoplayCheck);
     m_playlistDock->setWidget(playlistPanel);
     addDockWidget(Qt::RightDockWidgetArea, m_playlistDock);
     m_playlistDock->hide();
@@ -343,6 +354,7 @@ void MainWindow::loadControlSettings() {
     m_saturation = std::clamp(settings.value(QStringLiteral("display/saturation"), m_saturation).toInt(), -100, 100);
     m_brightness = std::clamp(settings.value(QStringLiteral("display/brightness"), m_brightness).toInt(), -100, 100);
     m_contrast = std::clamp(settings.value(QStringLiteral("display/contrast"), m_contrast).toInt(), -100, 100);
+    m_autoplayPlaylist = settings.value(QStringLiteral("playlist/autoplay"), m_autoplayPlaylist).toBool();
 }
 
 void MainWindow::showControlsDialog() {
@@ -798,6 +810,7 @@ void MainWindow::saveLogReport() {
     out << "Zoom reset shortcut: " << m_zoomResetKey.toString() << "\n";
     out << "Frame back shortcut: " << m_frameBackKey.toString() << "\n";
     out << "Frame forward shortcut: " << m_frameForwardKey.toString() << "\n";
+    out << "Autoplay next item: " << (m_autoplayPlaylist ? "enabled" : "disabled") << "\n";
 
     out << "\nPlaylist\n--------\n";
     if (m_playlist) {
@@ -904,7 +917,7 @@ void MainWindow::pumpMpvEvents() {
         if (!event || event->event_id == MPV_EVENT_NONE) break;
         if (event->event_id == MPV_EVENT_END_FILE) {
             auto* end = static_cast<mpv_event_end_file*>(event->data);
-            if (end && end->reason == MPV_END_FILE_REASON_EOF) playNext();
+            if (end && end->reason == MPV_END_FILE_REASON_EOF && m_autoplayPlaylist) playNext();
         } else if (event->event_id == MPV_EVENT_SHUTDOWN) {
             close();
             break;
@@ -1223,7 +1236,11 @@ void MainWindow::showDisplayDialog() {
     auto* form = new QFormLayout();
     form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
-    auto makeSlider = [&](const QString& name, int value, const char* property) {
+    const int currentSaturation = std::clamp(static_cast<int>(std::lround(getPropertyDouble("saturation"))), -100, 100);
+    const int currentBrightness = std::clamp(static_cast<int>(std::lround(getPropertyDouble("brightness"))), -100, 100);
+    const int currentContrast = std::clamp(static_cast<int>(std::lround(getPropertyDouble("contrast"))), -100, 100);
+
+    auto makeSlider = [&](const QString& name, int value, const char* property, int* storedValue, const char* settingKey) {
         auto* row = new QWidget(&dialog);
         auto* rowLayout = new QHBoxLayout(row);
         rowLayout->setContentsMargins(0, 0, 0, 0);
@@ -1235,60 +1252,46 @@ void MainWindow::showDisplayDialog() {
         valueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
         rowLayout->addWidget(slider, 1);
         rowLayout->addWidget(valueLabel);
-        connect(slider, &QSlider::valueChanged, &dialog, [this, property, valueLabel](int v) {
+        connect(slider, &QSlider::valueChanged, &dialog, [this, property, storedValue, settingKey, valueLabel](int v) {
             valueLabel->setText(QString::number(v));
+            *storedValue = v;
             setPropertyDouble(property, v);
+            QSettings settings(QStringLiteral("REX Player"), QStringLiteral("REX Player"));
+            settings.setValue(QString::fromUtf8(settingKey), v);
+            settings.sync();
         });
         form->addRow(name, row);
         return slider;
     };
 
-    const int originalSaturation = m_saturation;
-    const int originalBrightness = m_brightness;
-    const int originalContrast = m_contrast;
-    auto* saturation = makeSlider(QStringLiteral("Saturation"), m_saturation, "saturation");
-    auto* brightness = makeSlider(QStringLiteral("Brightness"), m_brightness, "brightness");
-    auto* contrast = makeSlider(QStringLiteral("Contrast"), m_contrast, "contrast");
+    auto* saturation = makeSlider(QStringLiteral("Saturation"), currentSaturation, "saturation", &m_saturation, "display/saturation");
+    auto* brightness = makeSlider(QStringLiteral("Brightness"), currentBrightness, "brightness", &m_brightness, "display/brightness");
+    auto* contrast = makeSlider(QStringLiteral("Contrast"), currentContrast, "contrast", &m_contrast, "display/contrast");
     layout->addLayout(form);
 
-    auto* note = new QLabel(QStringLiteral("Range: −100 to +100. Changes are previewed immediately and saved when you press OK."), &dialog);
+    auto* note = new QLabel(QStringLiteral("Range: −100 to +100. Changes are applied and remembered immediately."), &dialog);
     note->setWordWrap(true);
     layout->addWidget(note);
 
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
     auto* reset = buttons->addButton(QStringLiteral("Reset defaults"), QDialogButtonBox::ResetRole);
     layout->addWidget(buttons);
-
     connect(reset, &QPushButton::clicked, &dialog, [&] {
         saturation->setValue(0);
         brightness->setValue(0);
         contrast->setValue(0);
     });
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::accept);
 
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
-        m_saturation = saturation->value();
-        m_brightness = brightness->value();
-        m_contrast = contrast->value();
-        QSettings settings(QStringLiteral("REX Player"), QStringLiteral("REX Player"));
-        settings.setValue(QStringLiteral("display/saturation"), m_saturation);
-        settings.setValue(QStringLiteral("display/brightness"), m_brightness);
-        settings.setValue(QStringLiteral("display/contrast"), m_contrast);
-        dialog.accept();
-    });
-
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, [&] {
-        m_saturation = originalSaturation;
-        m_brightness = originalBrightness;
-        m_contrast = originalContrast;
-        setPropertyDouble("saturation", m_saturation);
-        setPropertyDouble("brightness", m_brightness);
-        setPropertyDouble("contrast", m_contrast);
-        dialog.reject();
-    });
-
+    dialog.adjustSize();
+    const int margin = 16;
+    const QSize size = dialog.size();
+    const QPoint global = mapToGlobal(QPoint(
+        std::max(margin, width() - size.width() - margin),
+        std::max(margin, height() - size.height() - margin)));
+    dialog.move(global);
     dialog.exec();
 }
-
 void MainWindow::setControlsVisible(bool visible) { if (m_controls) m_controls->setVisible(visible); }
 void MainWindow::togglePlaylist() { if (m_playlistDock) m_playlistDock->setVisible(!m_playlistDock->isVisible()); }
 void MainWindow::closeEvent(QCloseEvent* event) { if (m_mpv) { const char* args[] = {"quit", nullptr}; mpv_command(m_mpv, args); } QMainWindow::closeEvent(event); }

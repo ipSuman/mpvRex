@@ -12,6 +12,7 @@ class QPushButton;
 class QSlider;
 class QWidget;
 class QCloseEvent;
+class QCheckBox;
 class QDragEnterEvent;
 class QDropEvent;
 class QEvent;
@@ -106,6 +107,7 @@ private:
     QPushButton* m_seekForwardButton = nullptr;
     QPushButton* m_cutAbButton = nullptr;
     QPushButton* m_logButton = nullptr;
+    QCheckBox* m_autoplayCheck = nullptr;
     QProcess* m_cutProcess = nullptr;
     QString m_cutOutputPath;
     bool m_seeking = false;
@@ -116,6 +118,7 @@ private:
     double m_abLoopStart = -1.0;
     double m_abLoopEnd = -1.0;
     int m_currentPlaylistIndex = -1;
+    bool m_autoplayPlaylist = true;
 
     QString m_seekWheelMode = QStringLiteral("wheel");
     QString m_zoomWheelMode = QStringLiteral("alt-wheel");
