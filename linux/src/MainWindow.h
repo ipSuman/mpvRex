@@ -12,6 +12,7 @@ class QWidget;
 class QCloseEvent;
 class QDragEnterEvent;
 class QDropEvent;
+class QEvent;
 class QDockWidget;
 class QKeyEvent;
 
@@ -28,6 +29,7 @@ protected:
     void dragEnterEvent(QDragEnterEvent* event) override;
     void dropEvent(QDropEvent* event) override;
     void keyPressEvent(QKeyEvent* event) override;
+    bool eventFilter(QObject* watched, QEvent* event) override;
 
 private slots:
     void pumpMpvEvents();

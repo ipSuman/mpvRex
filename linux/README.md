@@ -47,3 +47,12 @@ Open a file directly:
 10. Clipping/export
 11. Jellyfin integration
 12. Linux packaging (AppImage, Flatpak, distro packages)
+
+## Mouse and touchpad controls
+
+On the video surface:
+
+- Double-click the left or right third to seek backward or forward 10 seconds.
+- Double-click the center to pause or resume.
+- Scroll to seek 5 seconds at a time.
+- Hold `Ctrl` while scrolling to adjust volume.

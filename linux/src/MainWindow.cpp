@@ -16,9 +16,11 @@
 #include <QListWidgetItem>
 #include <QMenu>
 #include <QMimeData>
+#include <QMouseEvent>
 #include <QPushButton>
 #include <QSlider>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 #include <QWidget>
 
 #include <algorithm>
@@ -105,8 +107,10 @@ void MainWindow::buildUi() {
     m_videoWidget = new QWidget(root);
     m_videoWidget->setAttribute(Qt::WA_NativeWindow);
     m_videoWidget->setFocusPolicy(Qt::StrongFocus);
+    m_videoWidget->setAttribute(Qt::WA_AcceptTouchEvents);
     m_videoWidget->setStyleSheet(QStringLiteral("background:#000;"));
     m_videoWidget->setMinimumSize(320, 180);
+    m_videoWidget->installEventFilter(this);
     layout->addWidget(m_videoWidget, 1);
 
     m_controls = new QWidget(root);
@@ -546,6 +550,38 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
     case Qt::Key_Escape: if (isFullScreen()) showNormal(); break;
     default: QMainWindow::keyPressEvent(event); break;
     }
+}
+bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched != m_videoWidget) return QMainWindow::eventFilter(watched, event);
+
+    if (event->type() == QEvent::MouseButtonDblClick) {
+        const auto* mouseEvent = static_cast<QMouseEvent*>(event);
+        if (mouseEvent->button() != Qt::LeftButton) return false;
+
+        const qreal x = mouseEvent->position().x();
+        const qreal width = m_videoWidget->width();
+        if (x < width / 3.0) seekBackward();
+        else if (x > width * 2.0 / 3.0) seekForward();
+        else togglePause();
+        return true;
+    }
+
+    if (event->type() == QEvent::Wheel) {
+        const auto* wheelEvent = static_cast<QWheelEvent*>(event);
+        const int delta = !wheelEvent->angleDelta().isNull()
+            ? wheelEvent->angleDelta().y() : wheelEvent->pixelDelta().y();
+        if (delta == 0) return false;
+
+        if (wheelEvent->modifiers().testFlag(Qt::ControlModifier)) {
+            m_volumeSlider->setValue(std::clamp(m_volumeSlider->value() + (delta > 0 ? 5 : -5), 0, 100));
+        } else {
+            const char* args[] = {"seek", delta > 0 ? "5" : "-5", "relative", "exact", nullptr};
+            command(args);
+        }
+        return true;
+    }
+
+    return QMainWindow::eventFilter(watched, event);
 }
 void MainWindow::toggleControls() { setControlsVisible(m_controls && !m_controls->isVisible()); }
 void MainWindow::setControlsVisible(bool visible) { if (m_controls) m_controls->setVisible(visible); }
