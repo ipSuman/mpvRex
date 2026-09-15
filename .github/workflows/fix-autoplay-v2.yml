@@ -1,0 +1,3 @@
+name: Temporary autoplay fix
+on:
+  workflow_dispatch:
