@@ -81,6 +81,8 @@ private:
     void showError(const QString& message);
     QString formatTime(double seconds) const;
     void setControlsVisible(bool visible);
+    void toggleFullscreen();
+    void showDisplayDialog();
     void loadControlSettings();
     bool keyMatches(QKeyEvent* event, const QKeySequence& sequence) const;
 
@@ -132,4 +134,9 @@ private:
     QKeySequence m_zoomResetKey = QKeySequence(Qt::Key_Z);
     QKeySequence m_frameBackKey = QKeySequence(Qt::Key_Comma);
     QKeySequence m_frameForwardKey = QKeySequence(Qt::Key_Period);
+    int m_saturation = 0;
+    int m_brightness = 0;
+    int m_contrast = 0;
+    QTimer m_fullscreenHideTimer;
+    bool m_playlistWasVisibleBeforeFullscreen = false;
 };
