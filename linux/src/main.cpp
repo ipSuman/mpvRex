@@ -6,6 +6,10 @@
 
 int main(int argc, char* argv[]) {
     std::setlocale(LC_NUMERIC, "C");
+
+    qputenv("QT_QPA_PLATFORM", "xcb");
+    qunsetenv("WAYLAND_DISPLAY");
+
     QApplication app(argc, argv);
     QCoreApplication::setApplicationName(QStringLiteral("REX Player"));
     QCoreApplication::setApplicationVersion(QStringLiteral("0.1.0"));
@@ -19,5 +23,6 @@ int main(int argc, char* argv[]) {
 
     const QString mediaPath = parser.positionalArguments().value(0);
     MainWindow window(mediaPath);
+    window.show();
     return app.exec();
 }
