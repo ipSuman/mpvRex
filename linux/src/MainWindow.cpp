@@ -358,10 +358,11 @@ void MainWindow::showTracksMenu() {
         action->setChecked(selected);
         connect(action, &QAction::triggered, this, [this, id, property] {
             if (id < 0) {
-                const char* value = "no";
+                static char noTrack[] = "no";
+                char* value = noTrack;
                 mpv_set_property_async(m_mpv, 0, property, MPV_FORMAT_STRING, &value);
             } else {
-                const int64_t value = id;
+                int64_t value = id;
                 mpv_set_property_async(m_mpv, 0, property, MPV_FORMAT_INT64, &value);
             }
         });
@@ -390,7 +391,8 @@ void MainWindow::showTracksMenu() {
         mpv_free_node_contents(&sid);
     }
     connect(autoSubtitle, &QAction::triggered, this, [this] {
-        const char* value = "no";
+        static char noSubtitle[] = "no";
+        char* value = noSubtitle;
         mpv_set_property_async(m_mpv, 0, "sid", MPV_FORMAT_STRING, &value);
     });
 
@@ -420,7 +422,7 @@ void MainWindow::showTracksMenu() {
             action->setCheckable(true);
             action->setChecked(selected);
             connect(action, &QAction::triggered, this, [this, id] {
-                const int64_t value = id;
+                int64_t value = id;
                 mpv_set_property_async(m_mpv, 0, "sid", MPV_FORMAT_INT64, &value);
             });
             hasSubtitles = true;
