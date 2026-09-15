@@ -67,6 +67,7 @@ private:
     void setPropertyDouble(const char* name, double value);
     void updateHardwareButton();
     void updatePlayButton(bool paused);
+    void updateSeekButtonLabels();
     void adjustVideoZoom(double amount);
     void resetVideoTransform();
     void setAbLoopStart();
@@ -96,6 +97,8 @@ private:
     QPushButton* m_hwButton = nullptr;
     QPushButton* m_previousButton = nullptr;
     QPushButton* m_nextButton = nullptr;
+    QPushButton* m_seekBackButton = nullptr;
+    QPushButton* m_seekForwardButton = nullptr;
     bool m_seeking = false;
     bool m_panningVideo = false;
     QPointF m_panStart;
@@ -111,6 +114,9 @@ private:
     Qt::MouseButton m_panButton = Qt::MiddleButton;
     Qt::MouseButton m_doubleClickButton = Qt::LeftButton;
     bool m_doubleClickZones = true;
+    int m_seekDurationMinutes = 1;
+    QKeySequence m_seekBackwardKey = QKeySequence(Qt::Key_Left);
+    QKeySequence m_seekForwardKey = QKeySequence(Qt::Key_Right);
     QKeySequence m_loopAKey = QKeySequence(Qt::Key_A);
     QKeySequence m_loopBKey = QKeySequence(Qt::Key_B);
     QKeySequence m_loopClearKey = QKeySequence(Qt::Key_L);
