@@ -1,0 +1,70 @@
+name: Restore 10s seek buttons
+
+on:
+  push:
+    branches: [linux]
+    paths:
+      - '.github/workflows/restore-10s-seek-buttons.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Restore fixed 10 second seek buttons
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('linux/src/MainWindow.cpp')
+          text = path.read_text()
+
+          old = '''    m_seekBackButton = new QPushButton(m_controls);\n    m_seekBackButton->setFixedWidth(60);\n    m_seekBackButton->setToolTip(QStringLiteral("Seek backward by the configured duration"));\n    connect(m_seekBackButton, &QPushButton::clicked, this, &MainWindow::seekBackward);\n    row->addWidget(m_seekBackButton);'''
+          new = '''    m_seekBackButton = new QPushButton(QStringLiteral("−10s"), m_controls);\n    m_seekBackButton->setFixedWidth(60);\n    m_seekBackButton->setToolTip(QStringLiteral("Seek backward 10 seconds"));\n    connect(m_seekBackButton, &QPushButton::clicked, this, [this] {\n        const char* args[] = {"seek", "-10", "relative", "exact", nullptr};\n        command(args);\n    });\n    row->addWidget(m_seekBackButton);'''
+          if old not in text:
+              raise SystemExit('Backward button pattern not found')
+          text = text.replace(old, new, 1)
+
+          old = '''    m_seekForwardButton = new QPushButton(m_controls);\n    m_seekForwardButton->setFixedWidth(60);\n    m_seekForwardButton->setToolTip(QStringLiteral("Seek forward by the configured duration"));\n    connect(m_seekForwardButton, &QPushButton::clicked, this, &MainWindow::seekForward);\n    row->addWidget(m_seekForwardButton);'''
+          new = '''    m_seekForwardButton = new QPushButton(QStringLiteral("+10s"), m_controls);\n    m_seekForwardButton->setFixedWidth(60);\n    m_seekForwardButton->setToolTip(QStringLiteral("Seek forward 10 seconds"));\n    connect(m_seekForwardButton, &QPushButton::clicked, this, [this] {\n        const char* args[] = {"seek", "10", "relative", "exact", nullptr};\n        command(args);\n    });\n    row->addWidget(m_seekForwardButton);'''
+          if old not in text:
+              raise SystemExit('Forward button pattern not found')
+          text = text.replace(old, new, 1)
+
+          old = '''    auto* note = new QLabel(QStringLiteral("Seek duration applies to the seek buttons, arrow keys, wheel seek and double-click seek zones. Changes are saved for the next launch. Clear a shortcut to disable it."), &dialog);'''
+          new = '''    auto* note = new QLabel(QStringLiteral("Seek duration applies to the arrow keys, wheel seek and double-click seek zones. The −10s and +10s buttons always seek exactly 10 seconds. Changes are saved for the next launch. Clear a shortcut to disable it."), &dialog);'''
+          if old not in text:
+              raise SystemExit('Controls note pattern not found')
+          text = text.replace(old, new, 1)
+
+          old = '''void MainWindow::updateSeekButtonLabels() { if (!m_seekBackButton || !m_seekForwardButton) return; const QString label = QStringLiteral("%1m").arg(m_seekDurationMinutes); m_seekBackButton->setText(QStringLiteral("−%1").arg(label)); m_seekForwardButton->setText(QStringLiteral("+%1").arg(label)); }'''
+          new = '''void MainWindow::updateSeekButtonLabels() { if (!m_seekBackButton || !m_seekForwardButton) return; m_seekBackButton->setText(QStringLiteral("−10s")); m_seekForwardButton->setText(QStringLiteral("+10s")); }'''
+          if old not in text:
+              raise SystemExit('Seek button label pattern not found')
+          text = text.replace(old, new, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Update README
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('linux/README.md')
+          text = path.read_text()
+          text = text.replace('- Scroll to seek 5 seconds at a time.', '- Click the **−10s** and **+10s** buttons to seek exactly 10 seconds.\n- Scroll to seek by the configurable seek duration.')
+          path.write_text(text)
+          PY
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add linux/src/MainWindow.cpp linux/README.md
+          git commit -m "Restore 10 second seek buttons"
+          git push origin linux
