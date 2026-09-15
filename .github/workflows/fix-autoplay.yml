@@ -1,0 +1,38 @@
+name: Fix Linux Autoplay
+
+on:
+  push:
+    branches: [linux]
+
+permissions:
+  contents: write
+
+jobs:
+  fix-and-build:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config qt6-base-dev libmpv-dev
+
+      - name: Apply autoplay fix
+        run: python3 linux/fix_autoplay.py
+
+      - name: Configure
+        run: cmake -S linux -B build-linux -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build build-linux --parallel
+
+      - name: Commit fix and remove temporary files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add linux/src/MainWindow.cpp
+          git rm linux/fix_autoplay.py .github/workflows/fix-autoplay.yml
+          git commit -m "Fix Linux playlist autoplay"
+          git push
