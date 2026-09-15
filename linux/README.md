@@ -12,6 +12,7 @@ This is the first foundation milestone:
 - Drag and drop a local media file
 - Basic mpv event pumping
 - CMake-based build
+- HW/SW decoding toggle with live status
 
 The Linux player is intentionally being built alongside the Android project rather than attempting to port the Android UI directly.
 
@@ -41,12 +42,11 @@ Open a file directly:
 4. Track/subtitle controls
 5. Gesture equivalents for mouse/touchpad
 6. Zoom, pan, A-B loop and frame navigation
-7. Resume/history database
-8. Network shares and streaming
-9. yt-dlp integration
-10. Clipping/export
-11. Jellyfin integration
-12. Linux packaging (AppImage, Flatpak, distro packages)
+7. Network shares and streaming
+8. yt-dlp integration
+9. Clipping/export
+10. Jellyfin integration
+11. Linux packaging (AppImage, Flatpak, distro packages)
 
 ## Mouse and touchpad controls
 
@@ -64,3 +64,10 @@ On the video surface:
 
 - Press `A` to set the A–B loop start and `B` to set its end; press `L` to clear it.
 - Press `.` to step forward one frame or `,` to step backward one frame.
+
+## Hardware decoding
+
+- The **HW/SW** button sits beside the A-B loop status.
+- `HW` means a hardware decoder is actively being used for the current video.
+- `SW` means software decoding is active, including when the current video or hardware setup cannot use a hardware decoder.
+- Clicking the button toggles mpv between `hwdec=auto` and `hwdec=no`.
