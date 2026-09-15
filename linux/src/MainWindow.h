@@ -47,6 +47,7 @@ private slots:
     void updatePlaybackUi();
     void toggleControls();
     void togglePlaylist();
+    void toggleHardwareDecoding();
     void playPrevious();
     void playNext();
     void showTracksMenu();
@@ -60,7 +61,9 @@ private:
     void syncPlaylistSelection();
     void command(const char** args);
     double getPropertyDouble(const char* name) const;
+    QString getPropertyString(const char* name) const;
     void setPropertyDouble(const char* name, double value);
+    void updateHardwareButton();
     void updatePlayButton(bool paused);
     void adjustVideoZoom(double amount);
     void resetVideoTransform();
@@ -86,6 +89,7 @@ private:
     QLabel* m_abLoopLabel = nullptr;
     QLabel* m_titleLabel = nullptr;
     QPushButton* m_playButton = nullptr;
+    QPushButton* m_hwButton = nullptr;
     QPushButton* m_previousButton = nullptr;
     QPushButton* m_nextButton = nullptr;
     bool m_seeking = false;
