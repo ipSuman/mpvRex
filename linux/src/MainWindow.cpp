@@ -25,6 +25,7 @@
 #include <QMouseEvent>
 #include <QPushButton>
 #include <QSettings>
+#include <QScrollArea>
 #include <QSlider>
 #include <QSpinBox>
 #include <QVBoxLayout>
@@ -763,14 +764,128 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
 }
 
 void MainWindow::toggleControls() {
-    if (!m_mpv) return;
-    const char* args[] = {
-        "show-text",
-        "File: ${filename}\nFormat: ${file-format}\nSize: ${width} × ${height}   FPS: ${container-fps}\nVideo: ${video-codec} (${video-format})\nVideo bitrate: ${video-bitrate}\nAudio: ${audio-codec-name}   ${audio-params/samplerate} Hz   ${audio-params/channel-count} ch\nAudio bitrate: ${audio-bitrate}\nDuration: ${duration}   Bitrate: ${bitrate}\nFile size: ${file-size}\nPixel format: ${video-params/pixelformat}\nColor: ${video-params/colormatrix} / ${video-params/primaries} / ${video-params/transfer}\nHW decode: ${hwdec-current}",
-        "10000",
-        nullptr
+    QDialog dialog(this);
+    dialog.setWindowTitle(QStringLiteral("Video Information"));
+    dialog.setModal(true);
+    dialog.resize(720, 700);
+
+    auto* mainLayout = new QVBoxLayout(&dialog);
+    auto* scrollArea = new QScrollArea(&dialog);
+    scrollArea->setWidgetResizable(true);
+    auto* content = new QWidget(scrollArea);
+    auto* layout = new QVBoxLayout(content);
+    layout->setContentsMargins(12, 12, 12, 12);
+    layout->setSpacing(8);
+
+    auto valueOrDash = [this](const char* property) {
+        const QString value = getPropertyString(property).trimmed();
+        return value.isEmpty() ? QStringLiteral("—") : value;
     };
-    command(args);
+    auto numberOrDash = [this](const char* property, int decimals = 2) {
+        const double value = getPropertyDouble(property);
+        return value > 0.0 ? QString::number(value, 'f', decimals) : QStringLiteral("—");
+    };
+    auto addSection = [&layout](const QString& title) {
+        auto* label = new QLabel(title, layout->parentWidget());
+        label->setStyleSheet(QStringLiteral("font-weight:600; font-size:14px; margin-top:6px;"));
+        layout->addWidget(label);
+    };
+    auto addRow = [&layout](const QString& name, const QString& value) {
+        auto* row = new QFormLayout();
+        row->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+        auto* label = new QLabel(value, layout->parentWidget());
+        label->setTextInteractionFlags(Qt::TextSelectableByMouse);
+        label->setWordWrap(true);
+        row->addRow(name, label);
+        layout->addLayout(row);
+    };
+
+    if (!m_mpv || getPropertyString("filename").isEmpty()) {
+        layout->addWidget(new QLabel(QStringLiteral("No media is currently loaded."), content));
+    } else {
+        addSection(QStringLiteral("File"));
+        addRow(QStringLiteral("File name"), valueOrDash("filename"));
+        addRow(QStringLiteral("Title"), valueOrDash("media-title"));
+        addRow(QStringLiteral("Path"), valueOrDash("path"));
+        addRow(QStringLiteral("Container"), valueOrDash("file-format"));
+        addRow(QStringLiteral("File size"), valueOrDash("file-size"));
+        addRow(QStringLiteral("Duration"), formatTime(getPropertyDouble("duration")));
+        addRow(QStringLiteral("Overall bitrate"), valueOrDash("bitrate"));
+
+        addSection(QStringLiteral("Video"));
+        addRow(QStringLiteral("Codec"), valueOrDash("video-codec"));
+        addRow(QStringLiteral("Format"), valueOrDash("video-format"));
+        addRow(QStringLiteral("Resolution"), QStringLiteral("%1 × %2").arg(numberOrDash("width", 0), numberOrDash("height", 0)));
+        addRow(QStringLiteral("FPS"), valueOrDash("container-fps"));
+        addRow(QStringLiteral("Bitrate"), valueOrDash("video-bitrate"));
+        addRow(QStringLiteral("Pixel format"), valueOrDash("video-params/pixelformat"));
+        addRow(QStringLiteral("Chroma location"), valueOrDash("video-params/chroma-location"));
+        addRow(QStringLiteral("Color matrix"), valueOrDash("video-params/colormatrix"));
+        addRow(QStringLiteral("Color primaries"), valueOrDash("video-params/primaries"));
+        addRow(QStringLiteral("Transfer"), valueOrDash("video-params/transfer"));
+        addRow(QStringLiteral("Rotation"), valueOrDash("video-params/rotate"));
+        addRow(QStringLiteral("Aspect ratio"), valueOrDash("video-params/aspect"));
+        addRow(QStringLiteral("HW decoder"), valueOrDash("hwdec-current"));
+
+        addSection(QStringLiteral("Audio"));
+        addRow(QStringLiteral("Codec"), valueOrDash("audio-codec-name"));
+        addRow(QStringLiteral("Format"), valueOrDash("audio-format"));
+        addRow(QStringLiteral("Sample rate"), valueOrDash("audio-params/samplerate"));
+        addRow(QStringLiteral("Channels"), valueOrDash("audio-params/channel-count"));
+        addRow(QStringLiteral("Channel layout"), valueOrDash("audio-params/channel-layout"));
+        addRow(QStringLiteral("Bitrate"), valueOrDash("audio-bitrate"));
+
+        addSection(QStringLiteral("Tracks"));
+        mpv_node tracks{};
+        bool haveTracks = false;
+        if (mpv_get_property(m_mpv, "track-list", MPV_FORMAT_NODE, &tracks) >= 0 &&
+            tracks.format == MPV_FORMAT_NODE_ARRAY && tracks.u.list) {
+            for (int i = 0; i < tracks.u.list->num; ++i) {
+                const mpv_node& track = tracks.u.list->values[i];
+                if (track.format != MPV_FORMAT_NODE_MAP || !track.u.list) continue;
+                const QString type = nodeString(mapValue(track.u.list, "type"));
+                const int id = nodeInt(mapValue(track.u.list, "id"));
+                if (id < 0) continue;
+                QString label = nodeString(mapValue(track.u.list, "title"));
+                const QString lang = nodeString(mapValue(track.u.list, "lang"));
+                const QString codec = nodeString(mapValue(track.u.list, "codec"));
+                const QString external = nodeString(mapValue(track.u.list, "external-filename"));
+                const bool selected = nodeFlag(mapValue(track.u.list, "selected"));
+                if (label.isEmpty()) label = lang;
+                if (label.isEmpty()) label = external.isEmpty() ? QStringLiteral("Track") : QFileInfo(external).fileName();
+                if (label.isEmpty()) label = QStringLiteral("Track");
+                QString details = QStringLiteral("#%1 — %2").arg(id).arg(label);
+                if (!lang.isEmpty() && label != lang) details += QStringLiteral(" [%1]").arg(lang);
+                if (!codec.isEmpty()) details += QStringLiteral(" • %1").arg(codec);
+                if (!external.isEmpty()) details += QStringLiteral(" • %1").arg(QFileInfo(external).fileName());
+                if (selected) details += QStringLiteral("  ✓ Active");
+                const QString section = type == QStringLiteral("video") ? QStringLiteral("Video track")
+                    : type == QStringLiteral("audio") ? QStringLiteral("Audio track")
+                    : type == QStringLiteral("sub") ? QStringLiteral("Subtitle track")
+                    : QStringLiteral("Other track");
+                addRow(section, details);
+                haveTracks = true;
+            }
+        }
+        mpv_free_node_contents(&tracks);
+        if (!haveTracks) addRow(QStringLiteral("Available"), QStringLiteral("No track information available."));
+
+        addSection(QStringLiteral("Playback / Output"));
+        addRow(QStringLiteral("Position"), QStringLiteral("%1 / %2").arg(formatTime(getPropertyDouble("time-pos")), formatTime(getPropertyDouble("duration"))));
+        addRow(QStringLiteral("Speed"), numberOrDash("speed"));
+        addRow(QStringLiteral("Pause"), valueOrDash("pause"));
+        addRow(QStringLiteral("Video output"), valueOrDash("vo"));
+        addRow(QStringLiteral("GPU API"), valueOrDash("gpu-api"));
+        addRow(QStringLiteral("Hardware decoding"), valueOrDash("hwdec-current"));
+    }
+
+    scrollArea->setWidget(content);
+    mainLayout->addWidget(scrollArea, 1);
+    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
+    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+    mainLayout->addWidget(buttons);
+    dialog.exec();
 }
 
 void MainWindow::setControlsVisible(bool visible) { if (m_controls) m_controls->setVisible(visible); }
