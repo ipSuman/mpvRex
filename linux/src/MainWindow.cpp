@@ -168,6 +168,9 @@ void MainWindow::buildUi() {
 
     m_timeLabel = new QLabel(QStringLiteral("00:00 / 00:00"), m_controls);
     row->addWidget(m_timeLabel);
+    m_abLoopLabel = new QLabel(QStringLiteral("A-B: Off"), m_controls);
+    m_abLoopLabel->setToolTip(QStringLiteral("A: set loop start, B: set loop end, L: clear loop"));
+    row->addWidget(m_abLoopLabel);
     row->addStretch();
 
     row->addWidget(new QLabel(QStringLiteral("Volume"), m_controls));
@@ -260,6 +263,7 @@ bool MainWindow::initializeMpv() {
 
 void MainWindow::loadFile(const QString& path) {
     if (!m_mpv || path.isEmpty()) return;
+    clearAbLoop();
     const QString absolute = QFileInfo(path).absoluteFilePath();
     addToPlaylist(absolute);
     const int index = m_playlist ? m_playlist->currentRow() : -1;
@@ -346,6 +350,47 @@ void MainWindow::resetVideoTransform() {
     setPropertyDouble("video-pan-y", 0.0);
     m_videoPanX = 0.0;
     m_videoPanY = 0.0;
+}
+void MainWindow::setAbLoopStart() {
+    if (getPropertyDouble("duration") <= 0.0) return;
+    const double position = getPropertyDouble("time-pos");
+    clearAbLoop();
+    m_abLoopStart = position;
+    setPropertyDouble("ab-loop-a", m_abLoopStart);
+    updateAbLoopLabel();
+}
+void MainWindow::setAbLoopEnd() {
+    const double position = getPropertyDouble("time-pos");
+    if (m_abLoopStart < 0.0 || position <= m_abLoopStart) return;
+    m_abLoopEnd = position;
+    setPropertyDouble("ab-loop-a", m_abLoopStart);
+    setPropertyDouble("ab-loop-b", m_abLoopEnd);
+    updateAbLoopLabel();
+}
+void MainWindow::clearAbLoop() {
+    static char noLoop[] = "no";
+    char* value = noLoop;
+    if (m_mpv) {
+        mpv_set_property_async(m_mpv, 0, "ab-loop-a", MPV_FORMAT_STRING, &value);
+        mpv_set_property_async(m_mpv, 0, "ab-loop-b", MPV_FORMAT_STRING, &value);
+    }
+    m_abLoopStart = -1.0;
+    m_abLoopEnd = -1.0;
+    updateAbLoopLabel();
+}
+void MainWindow::updateAbLoopLabel() {
+    if (!m_abLoopLabel) return;
+    if (m_abLoopStart < 0.0) {
+        m_abLoopLabel->setText(QStringLiteral("A-B: Off"));
+    } else if (m_abLoopEnd < 0.0) {
+        m_abLoopLabel->setText(QStringLiteral("A-B: %1 — …").arg(formatTime(m_abLoopStart)));
+    } else {
+        m_abLoopLabel->setText(QStringLiteral("A-B: %1 — %2").arg(formatTime(m_abLoopStart), formatTime(m_abLoopEnd)));
+    }
+}
+void MainWindow::stepFrame(bool forward) {
+    const char* args[] = {forward ? "frame-step" : "frame-back-step", nullptr};
+    command(args);
 }
 
 void MainWindow::showTracksMenu() {
@@ -561,6 +606,11 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
     case Qt::Key_Equal: adjustVideoZoom(0.1); break;
     case Qt::Key_Minus: adjustVideoZoom(-0.1); break;
     case Qt::Key_Z: resetVideoTransform(); break;
+    case Qt::Key_A: setAbLoopStart(); break;
+    case Qt::Key_B: setAbLoopEnd(); break;
+    case Qt::Key_L: clearAbLoop(); break;
+    case Qt::Key_Period: stepFrame(true); break;
+    case Qt::Key_Comma: stepFrame(false); break;
     case Qt::Key_F11: isFullScreen() ? showNormal() : showFullScreen(); break;
     case Qt::Key_Escape: if (isFullScreen()) showNormal(); break;
     default: QMainWindow::keyPressEvent(event); break;

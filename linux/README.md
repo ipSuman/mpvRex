@@ -59,3 +59,8 @@ On the video surface:
 - Hold `Alt` while scrolling to zoom the video.
 - Drag with the middle mouse button to pan a zoomed video.
 - Press `+` or `-` to zoom, and `Z` to reset zoom and pan.
+
+## Precision playback
+
+- Press `A` to set the A–B loop start and `B` to set its end; press `L` to clear it.
+- Press `.` to step forward one frame or `,` to step backward one frame.

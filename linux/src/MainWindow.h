@@ -64,6 +64,11 @@ private:
     void updatePlayButton(bool paused);
     void adjustVideoZoom(double amount);
     void resetVideoTransform();
+    void setAbLoopStart();
+    void setAbLoopEnd();
+    void clearAbLoop();
+    void updateAbLoopLabel();
+    void stepFrame(bool forward);
     void showError(const QString& message);
     QString formatTime(double seconds) const;
     void setControlsVisible(bool visible);
@@ -78,6 +83,7 @@ private:
     QSlider* m_seekSlider = nullptr;
     QSlider* m_volumeSlider = nullptr;
     QLabel* m_timeLabel = nullptr;
+    QLabel* m_abLoopLabel = nullptr;
     QLabel* m_titleLabel = nullptr;
     QPushButton* m_playButton = nullptr;
     QPushButton* m_previousButton = nullptr;
@@ -87,5 +93,7 @@ private:
     QPointF m_panStart;
     double m_videoPanX = 0.0;
     double m_videoPanY = 0.0;
+    double m_abLoopStart = -1.0;
+    double m_abLoopEnd = -1.0;
     int m_currentPlaylistIndex = -1;
 };
