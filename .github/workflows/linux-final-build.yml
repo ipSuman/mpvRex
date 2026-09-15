@@ -24,6 +24,9 @@ jobs:
       - name: Apply Save Log update
         run: python3 linux/apply_log_update.py
 
+      - name: Apply display and fullscreen update
+        run: python3 linux/apply_display_fullscreen.py
+
       - name: Configure
         run: cmake -S linux -B build-linux -DCMAKE_BUILD_TYPE=Release
 
@@ -44,7 +47,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add linux/src/MainWindow.h linux/src/MainWindow.cpp
-          git commit -m "Add diagnostic log report button"
+          git commit -m "Add display controls and Enter fullscreen mode"
           git push
 
       - name: Upload Linux build
