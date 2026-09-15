@@ -55,7 +55,8 @@ On the video surface:
 
 - Double-click the left or right third to seek backward or forward 10 seconds.
 - Double-click the center to pause or resume.
-- Scroll to seek 5 seconds at a time.
+- Click the **−10s** and **+10s** buttons to seek exactly 10 seconds.
+- Scroll to seek by the configurable seek duration.
 - Hold `Ctrl` while scrolling to adjust volume.
 - Hold `Alt` while scrolling to zoom the video.
 - Drag with the middle mouse button to pan a zoomed video.

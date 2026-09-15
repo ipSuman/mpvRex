@@ -177,19 +177,25 @@ void MainWindow::buildUi() {
     m_previousButton->setFixedWidth(48);
     connect(m_previousButton, &QPushButton::clicked, this, &MainWindow::playPrevious);
     row->addWidget(m_previousButton);
-    m_seekBackButton = new QPushButton(m_controls);
+    m_seekBackButton = new QPushButton(QStringLiteral("−10s"), m_controls);
     m_seekBackButton->setFixedWidth(60);
-    m_seekBackButton->setToolTip(QStringLiteral("Seek backward by the configured duration"));
-    connect(m_seekBackButton, &QPushButton::clicked, this, &MainWindow::seekBackward);
+    m_seekBackButton->setToolTip(QStringLiteral("Seek backward 10 seconds"));
+    connect(m_seekBackButton, &QPushButton::clicked, this, [this] {
+        const char* args[] = {"seek", "-10", "relative", "exact", nullptr};
+        command(args);
+    });
     row->addWidget(m_seekBackButton);
     m_playButton = new QPushButton(QStringLiteral("▶"), m_controls);
     m_playButton->setFixedWidth(52);
     connect(m_playButton, &QPushButton::clicked, this, &MainWindow::togglePause);
     row->addWidget(m_playButton);
-    m_seekForwardButton = new QPushButton(m_controls);
+    m_seekForwardButton = new QPushButton(QStringLiteral("+10s"), m_controls);
     m_seekForwardButton->setFixedWidth(60);
-    m_seekForwardButton->setToolTip(QStringLiteral("Seek forward by the configured duration"));
-    connect(m_seekForwardButton, &QPushButton::clicked, this, &MainWindow::seekForward);
+    m_seekForwardButton->setToolTip(QStringLiteral("Seek forward 10 seconds"));
+    connect(m_seekForwardButton, &QPushButton::clicked, this, [this] {
+        const char* args[] = {"seek", "10", "relative", "exact", nullptr};
+        command(args);
+    });
     row->addWidget(m_seekForwardButton);
     m_nextButton = new QPushButton(QStringLiteral("⏭"), m_controls);
     m_nextButton->setToolTip(QStringLiteral("Next item"));
@@ -371,7 +377,7 @@ void MainWindow::showControlsDialog() {
     keyForm->addRow(QStringLiteral(". → Next frame"), frameForward);
     mainLayout->addLayout(keyForm);
 
-    auto* note = new QLabel(QStringLiteral("Seek duration applies to the seek buttons, arrow keys, wheel seek and double-click seek zones. Changes are saved for the next launch. Clear a shortcut to disable it."), &dialog);
+    auto* note = new QLabel(QStringLiteral("Seek duration applies to the arrow keys, wheel seek and double-click seek zones. The −10s and +10s buttons always seek exactly 10 seconds. Changes are saved for the next launch. Clear a shortcut to disable it."), &dialog);
     note->setWordWrap(true);
     mainLayout->addWidget(note);
 
@@ -528,7 +534,7 @@ void MainWindow::setVolume(int value) { setPropertyDouble("volume", value); }
 double MainWindow::getPropertyDouble(const char* name) const { if (!m_mpv) return 0.0; double value = 0.0; return mpv_get_property(m_mpv, name, MPV_FORMAT_DOUBLE, &value) >= 0 ? value : 0.0; }
 QString MainWindow::getPropertyString(const char* name) const { if (!m_mpv) return {}; char* value = nullptr; if (mpv_get_property(m_mpv, name, MPV_FORMAT_STRING, &value) < 0 || !value) return {}; const QString result = QString::fromUtf8(value); mpv_free(value); return result; }
 void MainWindow::setPropertyDouble(const char* name, double value) { if (m_mpv) mpv_set_property_async(m_mpv, 0, name, MPV_FORMAT_DOUBLE, &value); }
-void MainWindow::updateSeekButtonLabels() { if (!m_seekBackButton || !m_seekForwardButton) return; const QString label = QStringLiteral("%1m").arg(m_seekDurationMinutes); m_seekBackButton->setText(QStringLiteral("−%1").arg(label)); m_seekForwardButton->setText(QStringLiteral("+%1").arg(label)); }
+void MainWindow::updateSeekButtonLabels() { if (!m_seekBackButton || !m_seekForwardButton) return; m_seekBackButton->setText(QStringLiteral("−10s")); m_seekForwardButton->setText(QStringLiteral("+10s")); }
 void MainWindow::adjustVideoZoom(double amount) { setPropertyDouble("video-zoom", std::clamp(getPropertyDouble("video-zoom") + amount, -2.0, 3.0)); }
 void MainWindow::resetVideoTransform() { setPropertyDouble("video-zoom", 0.0); setPropertyDouble("video-pan-x", 0.0); setPropertyDouble("video-pan-y", 0.0); m_videoPanX = 0.0; m_videoPanY = 0.0; }
 void MainWindow::setAbLoopStart() { if (getPropertyDouble("duration") <= 0.0) return; const double position = getPropertyDouble("time-pos"); clearAbLoop(); m_abLoopStart = position; setPropertyDouble("ab-loop-a", position); updateAbLoopLabel(); }
