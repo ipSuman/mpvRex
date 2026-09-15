@@ -32,10 +32,12 @@ jobs:
       - name: Build
         run: cmake --build build-linux --parallel
 
-      - name: Package binary
+      - name: Package Linux launcher and binary
         run: |
           mkdir -p dist/rex-player-linux
-          cp build-linux/rex-player dist/rex-player-linux/
+          cp build-linux/rex-player dist/rex-player-linux/rex-player-bin
+          cp linux/rex-player-launcher.sh dist/rex-player-linux/rex-player
+          chmod +x dist/rex-player-linux/rex-player
           cp linux/README.md dist/rex-player-linux/
           tar -C dist -czf rex-player-linux.tar.gz rex-player-linux
 
