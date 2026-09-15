@@ -24,6 +24,9 @@ jobs:
       - name: Apply Save Log update
         run: python3 linux/apply_log_update.py
 
+      - name: Apply display and autoplay update
+        run: python3 linux/update_display_autoplay.py
+
       - name: Configure
         run: cmake -S linux -B build-linux -DCMAKE_BUILD_TYPE=Release
 
@@ -47,7 +50,7 @@ jobs:
           if git diff --cached --quiet; then
             echo "No source changes to commit."
           else
-            git commit -m "Update Linux player source"
+            git commit -m "Improve display persistence and add playlist autoplay"
             git push
           fi
 
