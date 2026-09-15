@@ -362,33 +362,27 @@ void MainWindow::showControlsDialog() {
     dialog.setWindowTitle(QStringLiteral("Controls"));
     dialog.setModal(true);
     dialog.resize(520, 650);
-
     auto* mainLayout = new QVBoxLayout(&dialog);
     auto* form = new QFormLayout();
     form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-
     auto* seekDuration = new QSpinBox(&dialog);
     seekDuration->setRange(1, 120);
     seekDuration->setSingleStep(1);
     seekDuration->setSuffix(QStringLiteral(" min"));
     seekDuration->setValue(m_seekDurationMinutes);
     form->addRow(QStringLiteral("Seek duration"), seekDuration);
-
     auto* seekWheel = new QComboBox(&dialog);
     addWheelModes(seekWheel);
     selectData(seekWheel, m_seekWheelMode);
     form->addRow(QStringLiteral("Touchpad / wheel → Seek"), seekWheel);
-
     auto* zoomWheel = new QComboBox(&dialog);
     addWheelModes(zoomWheel);
     selectData(zoomWheel, m_zoomWheelMode);
     form->addRow(QStringLiteral("Wheel → Zoom"), zoomWheel);
-
     auto* volumeWheel = new QComboBox(&dialog);
     addWheelModes(volumeWheel);
     selectData(volumeWheel, m_volumeWheelMode);
     form->addRow(QStringLiteral("Wheel → Volume"), volumeWheel);
-
     auto* panButton = new QComboBox(&dialog);
     panButton->addItem(QStringLiteral("Left button"), static_cast<int>(Qt::LeftButton));
     panButton->addItem(QStringLiteral("Middle button"), static_cast<int>(Qt::MiddleButton));
@@ -396,7 +390,6 @@ void MainWindow::showControlsDialog() {
     panButton->addItem(QStringLiteral("Disabled"), static_cast<int>(Qt::NoButton));
     selectData(panButton, static_cast<int>(m_panButton));
     form->addRow(QStringLiteral("Drag → Pan"), panButton);
-
     auto* doubleClickButton = new QComboBox(&dialog);
     doubleClickButton->addItem(QStringLiteral("Left button"), static_cast<int>(Qt::LeftButton));
     doubleClickButton->addItem(QStringLiteral("Middle button"), static_cast<int>(Qt::MiddleButton));
@@ -404,11 +397,9 @@ void MainWindow::showControlsDialog() {
     doubleClickButton->addItem(QStringLiteral("Disabled"), static_cast<int>(Qt::NoButton));
     selectData(doubleClickButton, static_cast<int>(m_doubleClickButton));
     form->addRow(QStringLiteral("Double-click zones"), doubleClickButton);
-
     mainLayout->addWidget(new QLabel(QStringLiteral("Mouse / touchpad"), &dialog));
     mainLayout->addLayout(form);
     mainLayout->addWidget(new QLabel(QStringLiteral("Keyboard shortcuts"), &dialog));
-
     auto* keyForm = new QFormLayout();
     auto* seekBack = new QKeySequenceEdit(m_seekBackwardKey, &dialog);
     auto* seekForward = new QKeySequenceEdit(m_seekForwardKey, &dialog);
@@ -433,15 +424,12 @@ void MainWindow::showControlsDialog() {
     keyForm->addRow(QStringLiteral(", → Previous frame"), frameBack);
     keyForm->addRow(QStringLiteral(". → Next frame"), frameForward);
     mainLayout->addLayout(keyForm);
-
     auto* note = new QLabel(QStringLiteral("Seek duration applies to the arrow keys, wheel seek and double-click seek zones. The −10s and +10s buttons always seek exactly 10 seconds. Changes are saved for the next launch. Clear a shortcut to disable it."), &dialog);
     note->setWordWrap(true);
     mainLayout->addWidget(note);
-
     auto* buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, &dialog);
     auto* reset = buttons->addButton(QStringLiteral("Reset defaults"), QDialogButtonBox::ResetRole);
     mainLayout->addWidget(buttons);
-
     connect(reset, &QPushButton::clicked, &dialog, [&] {
         seekDuration->setValue(1);
         selectData(seekWheel, QStringLiteral("wheel"));
@@ -460,7 +448,6 @@ void MainWindow::showControlsDialog() {
         frameBack->setKeySequence(QKeySequence(Qt::Key_Comma));
         frameForward->setKeySequence(QKeySequence(Qt::Key_Period));
     });
-
     connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
         const QStringList wheelModes = {seekWheel->currentData().toString(), zoomWheel->currentData().toString(), volumeWheel->currentData().toString()};
         for (int i = 0; i < wheelModes.size(); ++i) {
@@ -488,7 +475,6 @@ void MainWindow::showControlsDialog() {
         m_zoomResetKey = zoomReset->keySequence();
         m_frameBackKey = frameBack->keySequence();
         m_frameForwardKey = frameForward->keySequence();
-
         QSettings settings(QStringLiteral("REX Player"), QStringLiteral("REX Player"));
         settings.setValue(QStringLiteral("controls/seekDurationMinutes"), m_seekDurationMinutes);
         settings.setValue(QStringLiteral("controls/seekWheel"), m_seekWheelMode);
@@ -511,7 +497,6 @@ void MainWindow::showControlsDialog() {
         dialog.accept();
     });
     connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-
     dialog.exec();
 }
 
@@ -577,6 +562,7 @@ void MainWindow::playPlaylistIndex(int index) {
     auto* item = m_playlist->item(index);
     const QString path = item->data(Qt::UserRole).toString();
     if (path.isEmpty() || !QFileInfo::exists(path)) return;
+    m_autoplayTransitionPending = false;
     m_currentPlaylistIndex = index;
     m_playlist->setCurrentRow(index);
     const QByteArray encoded = path.toUtf8();
@@ -609,312 +595,6 @@ void MainWindow::updateAbLoopLabel() { if (!m_abLoopLabel) return; if (m_abLoopS
 void MainWindow::stepFrame(bool forward) { const char* args[] = {forward ? "frame-step" : "frame-back-step", nullptr}; command(args); }
 void MainWindow::toggleHardwareDecoding() { if (!m_mpv) return; const char* args[] = {"cycle-values", "hwdec", "auto", "no", nullptr}; command(args); }
 
-void MainWindow::cutAbSelection() {
-    if (!m_mpv) return;
-    if (m_abLoopStart < 0.0 || m_abLoopEnd <= m_abLoopStart) {
-        QMessageBox::information(this, QStringLiteral("Cut A-B"), QStringLiteral("Set both A and B points first."));
-        return;
-    }
-    if (m_cutProcess && m_cutProcess->state() != QProcess::NotRunning) {
-        QMessageBox::information(this, QStringLiteral("Cut A-B"), QStringLiteral("An A-B cut is already in progress."));
-        return;
-    }
-
-    const QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
-    if (ffmpeg.isEmpty()) {
-        QMessageBox::warning(this, QStringLiteral("FFmpeg not found"),
-                             QStringLiteral("FFmpeg is required for A-B cutting. Install the ffmpeg package and try again."));
-        return;
-    }
-
-    QString inputPath = getPropertyString("path").trimmed();
-    const QUrl inputUrl(inputPath);
-    if (inputUrl.isLocalFile()) inputPath = inputUrl.toLocalFile();
-    const QFileInfo inputInfo(inputPath);
-    if (!inputInfo.isFile()) {
-        QMessageBox::warning(this, QStringLiteral("Cut A-B"), QStringLiteral("The current media is not a local file."));
-        return;
-    }
-
-    const double duration = m_abLoopEnd - m_abLoopStart;
-    const QString start = QString::number(m_abLoopStart, 'f', 6);
-    const QString length = QString::number(duration, 'f', 6);
-    const QString suffix = inputInfo.suffix();
-    const QString defaultName = inputInfo.dir().filePath(
-        inputInfo.completeBaseName() + QStringLiteral("_AB_cut") +
-        (suffix.isEmpty() ? QString() : QStringLiteral(".") + suffix));
-    const QString filter = suffix.isEmpty()
-        ? QStringLiteral("All files (*)")
-        : QStringLiteral("%1 (*.%1);;All files (*)").arg(suffix);
-    const QString outputPath = QFileDialog::getSaveFileName(this, QStringLiteral("Save A-B cut"), defaultName, filter);
-    if (outputPath.isEmpty()) return;
-
-    const QFileInfo outputInfo(outputPath);
-    if (outputInfo.absoluteFilePath() == inputInfo.absoluteFilePath()) {
-        QMessageBox::warning(this, QStringLiteral("Cut A-B"), QStringLiteral("The output file must be different from the input file."));
-        return;
-    }
-    if (outputInfo.exists()) {
-        const auto answer = QMessageBox::question(
-            this, QStringLiteral("Overwrite file?"),
-            QStringLiteral("%1 already exists. Replace it?").arg(outputInfo.fileName()),
-            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
-        if (answer != QMessageBox::Yes) return;
-    }
-
-    m_cutOutputPath = outputPath;
-    m_cutProcess = new QProcess(this);
-    m_cutProcess->setProcessChannelMode(QProcess::SeparateChannels);
-    m_cutAbButton->setEnabled(false);
-
-    connect(m_cutProcess, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus exitStatus) {
-        const QString error = QString::fromLocal8Bit(m_cutProcess->readAllStandardError()).trimmed();
-        const QString output = m_cutOutputPath;
-        const bool success = exitStatus == QProcess::NormalExit && exitCode == 0 && QFileInfo::exists(output);
-        if (success) {
-            QMessageBox::information(
-                this, QStringLiteral("A-B cut complete"),
-                QStringLiteral("Saved:\n%1\n\nStreams were copied without re-encoding. Because this is stream-copy cutting, the start may align to a nearby keyframe.").arg(output));
-        } else {
-            if (QFileInfo::exists(output)) QFile::remove(output);
-            const QString detail = error.isEmpty() ? QStringLiteral("FFmpeg exited with code %1.").arg(exitCode) : error;
-            QMessageBox::warning(this, QStringLiteral("A-B cut failed"), detail);
-        }
-        m_cutAbButton->setEnabled(true);
-        m_cutProcess->deleteLater();
-        m_cutProcess = nullptr;
-        m_cutOutputPath.clear();
-    });
-
-    const QStringList args = {
-        QStringLiteral("-hide_banner"),
-        QStringLiteral("-loglevel"), QStringLiteral("error"),
-        QStringLiteral("-ss"), start,
-        QStringLiteral("-i"), inputPath,
-        QStringLiteral("-t"), length,
-        QStringLiteral("-map"), QStringLiteral("0"),
-        QStringLiteral("-c"), QStringLiteral("copy"),
-        QStringLiteral("-avoid_negative_ts"), QStringLiteral("make_zero"),
-        QStringLiteral("-y"), outputPath
-    };
-    m_cutProcess->start(ffmpeg, args);
-}
-
-void MainWindow::saveLogReport() {
-    const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss"));
-    const QString defaultName = QDir::home().filePath(QStringLiteral("REX_Player_Log_%1.txt").arg(timestamp));
-    const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("Save REX Player log report"), defaultName, QStringLiteral("Text files (*.txt);;All files (*)"));
-    if (path.isEmpty()) return;
-
-    QFile file(path);
-    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
-        QMessageBox::warning(this, QStringLiteral("Save Log"), QStringLiteral("Could not write the log report:\n%1").arg(file.errorString()));
-        return;
-    }
-
-    QTextStream out(&file);
-    out << "REX Player - Diagnostic Log Report\n";
-    out << "=================================\n\n";
-    out << "Generated: " << QDateTime::currentDateTime().toString(Qt::ISODate) << "\n";
-    out << "Application: " << QCoreApplication::applicationName() << " " << QCoreApplication::applicationVersion() << "\n";
-    out << "Qt: " << QT_VERSION_STR << "\n";
-    out << "OS: " << QSysInfo::prettyProductName() << "\n";
-    out << "Kernel: " << QSysInfo::kernelType() << " " << QSysInfo::kernelVersion() << "\n";
-    out << "CPU architecture: " << QSysInfo::currentCpuArchitecture() << "\n";
-    out << "Build ABI: " << QSysInfo::buildAbi() << "\n";
-    out << "Host name: " << QSysInfo::machineHostName() << "\n";
-    out << "LC_NUMERIC: " << qgetenv("LC_NUMERIC") << "\n";
-    out << "QT_QPA_PLATFORM: " << qgetenv("QT_QPA_PLATFORM") << "\n";
-    out << "WAYLAND_DISPLAY: " << qgetenv("WAYLAND_DISPLAY") << "\n";
-    out << "DISPLAY: " << qgetenv("DISPLAY") << "\n\n";
-
-    auto writeString = [&out, this](const char* key, const char* label) {
-        const QString value = getPropertyString(key);
-        if (!value.isEmpty()) out << label << ": " << value << "\n";
-    };
-    auto writeDouble = [&out, this](const char* key, const char* label) {
-        const double value = getPropertyDouble(key);
-        if (std::isfinite(value)) out << label << ": " << QString::number(value, 'g', 12) << "\n";
-    };
-
-    out << "Playback / Media\n----------------\n";
-    writeString("path", "Path");
-    writeString("filename", "Filename");
-    writeString("media-title", "Media title");
-    writeString("file-format", "Container");
-    writeDouble("duration", "Duration (s)");
-    writeDouble("bitrate", "Overall bitrate");
-    writeString("video-codec", "Video codec");
-    writeString("video-format", "Video format");
-    writeDouble("video-params/w", "Video width");
-    writeDouble("video-params/h", "Video height");
-    writeDouble("container-fps", "Container FPS");
-    writeDouble("video-bitrate", "Video bitrate");
-    writeString("video-params/pixelformat", "Pixel format");
-    writeString("video-params/chroma-location", "Chroma location");
-    writeString("video-params/colormatrix", "Color matrix");
-    writeString("video-params/primaries", "Color primaries");
-    writeString("video-params/transfer", "Color transfer");
-    writeDouble("video-params/rotate", "Rotation");
-    writeString("audio-codec", "Audio codec");
-    writeString("audio-format", "Audio format");
-    writeDouble("audio-samplerate", "Audio sample rate");
-    writeString("audio-channels", "Audio channels");
-    writeString("audio-channel-layout", "Audio channel layout");
-    writeDouble("audio-bitrate", "Audio bitrate");
-    writeString("hwdec", "HW decoder setting");
-    writeString("hwdec-current", "Active HW decoder");
-    writeString("vo", "Video output");
-    writeString("gpu-api", "GPU API");
-    writeDouble("time-pos", "Position (s)");
-    writeDouble("speed", "Speed");
-    writeDouble("video-zoom", "Video zoom");
-    writeDouble("saturation", "Saturation");
-    writeDouble("brightness", "Brightness");
-    writeDouble("contrast", "Contrast");
-    writeDouble("video-pan-x", "Video pan X");
-    writeDouble("video-pan-y", "Video pan Y");
-    writeString("pause", "Paused");
-
-    out << "\nTracks\n------\n";
-    mpv_node tracks{};
-    if (m_mpv && mpv_get_property(m_mpv, "track-list", MPV_FORMAT_NODE, &tracks) >= 0 && tracks.format == MPV_FORMAT_NODE_ARRAY && tracks.u.list) {
-        for (int i = 0; i < tracks.u.list->num; ++i) {
-            const mpv_node* track = &tracks.u.list->values[i];
-            out << "Track " << (i + 1)
-                << ": type=" << nodeString(mapValue(track->u.list, "type"))
-                << ", id=" << nodeInt(mapValue(track->u.list, "id"))
-                << ", lang=" << nodeString(mapValue(track->u.list, "lang"))
-                << ", title=" << nodeString(mapValue(track->u.list, "title"))
-                << ", codec=" << nodeString(mapValue(track->u.list, "codec"))
-                << ", external=" << nodeString(mapValue(track->u.list, "external-filename"))
-                << ", selected=" << (nodeFlag(mapValue(track->u.list, "selected")) ? "yes" : "no") << "\n";
-        }
-        mpv_free_node_contents(&tracks);
-    } else {
-        out << "Unable to read track-list.\n";
-    }
-
-    out << "\nA-B / Controls\n--------------\n";
-    out << "A-B start: " << m_abLoopStart << "\n";
-    out << "A-B end: " << m_abLoopEnd << "\n";
-    out << "Seek duration (minutes): " << m_seekDurationMinutes << "\n";
-    out << "Seek wheel: " << m_seekWheelMode << "\n";
-    out << "Zoom wheel: " << m_zoomWheelMode << "\n";
-    out << "Volume wheel: " << m_volumeWheelMode << "\n";
-    out << "Pan button: " << static_cast<int>(m_panButton) << "\n";
-    out << "Double-click button: " << static_cast<int>(m_doubleClickButton) << "\n";
-    out << "Double-click zones: " << (m_doubleClickZones ? "enabled" : "disabled") << "\n";
-    out << "Seek backward shortcut: " << m_seekBackwardKey.toString() << "\n";
-    out << "Seek forward shortcut: " << m_seekForwardKey.toString() << "\n";
-    out << "Loop A shortcut: " << m_loopAKey.toString() << "\n";
-    out << "Loop B shortcut: " << m_loopBKey.toString() << "\n";
-    out << "Loop clear shortcut: " << m_loopClearKey.toString() << "\n";
-    out << "Zoom in shortcut: " << m_zoomInKey.toString() << "\n";
-    out << "Zoom out shortcut: " << m_zoomOutKey.toString() << "\n";
-    out << "Zoom reset shortcut: " << m_zoomResetKey.toString() << "\n";
-    out << "Frame back shortcut: " << m_frameBackKey.toString() << "\n";
-    out << "Frame forward shortcut: " << m_frameForwardKey.toString() << "\n";
-    out << "Autoplay next item: " << (m_autoplayPlaylist ? "enabled" : "disabled") << "\n";
-
-    out << "\nPlaylist\n--------\n";
-    if (m_playlist) {
-        out << "Count: " << m_playlist->count() << "\n";
-        out << "Current index: " << m_currentPlaylistIndex << "\n";
-        for (int i = 0; i < m_playlist->count(); ++i)
-            out << (i + 1) << ": " << m_playlist->item(i)->data(Qt::UserRole).toString() << "\n";
-    }
-
-    out << "\nEnd of report\n";
-    file.close();
-    QMessageBox::information(this, QStringLiteral("Log saved"), QStringLiteral("Diagnostic report saved to:\n%1").arg(path));
-}
-
-void MainWindow::updateHardwareButton() {
-    if (!m_hwButton || !m_mpv) return;
-    const QString current = getPropertyString("hwdec-current").trimmed().toLower();
-    const bool hardwareActive = !current.isEmpty() && current != QStringLiteral("no");
-    m_hwButton->setText(hardwareActive ? QStringLiteral("HW") : QStringLiteral("SW"));
-    m_hwButton->setToolTip(hardwareActive
-        ? QStringLiteral("Hardware decoding active (%1). Click to switch to software decoding.").arg(current)
-        : QStringLiteral("Software decoding active. Click to enable hardware decoding when supported."));
-}
-
-void MainWindow::showTracksMenu() {
-    if (!m_mpv) return;
-    mpv_node tracks{};
-    if (mpv_get_property(m_mpv, "track-list", MPV_FORMAT_NODE, &tracks) < 0 || tracks.format != MPV_FORMAT_NODE_ARRAY || !tracks.u.list) { mpv_free_node_contents(&tracks); return; }
-    auto* menu = new QMenu(this); menu->setAttribute(Qt::WA_DeleteOnClose);
-    auto* audioMenu = menu->addMenu(QStringLiteral("Audio"));
-    auto* subtitleMenu = menu->addMenu(QStringLiteral("Subtitles"));
-    const mpv_node_list* list = tracks.u.list;
-    bool hasAudio = false;
-    bool hasSubtitles = false;
-    auto addTrack = [this](QMenu* target, const QString& label, int id, bool selected, const char* property) {
-        auto* action = target->addAction(label);
-        action->setCheckable(true);
-        action->setChecked(selected);
-        connect(action, &QAction::triggered, this, [this, id, property] {
-            if (id < 0) {
-                static char noTrack[] = "no";
-                char* value = noTrack;
-                mpv_set_property_async(m_mpv, 0, property, MPV_FORMAT_STRING, &value);
-            } else {
-                int64_t value = id;
-                mpv_set_property_async(m_mpv, 0, property, MPV_FORMAT_INT64, &value);
-            }
-        });
-    };
-    addTrack(audioMenu, QStringLiteral("Auto"), -1, false, "aid");
-    mpv_node aid{};
-    if (mpv_get_property(m_mpv, "aid", MPV_FORMAT_NODE, &aid) >= 0 && aid.format == MPV_FORMAT_INT64) audioMenu->actions().first()->setChecked(aid.u.int64 < 0);
-    mpv_free_node_contents(&aid);
-    auto* autoSubtitle = subtitleMenu->addAction(QStringLiteral("Off"));
-    autoSubtitle->setCheckable(true);
-    mpv_node sid{};
-    if (mpv_get_property(m_mpv, "sid", MPV_FORMAT_NODE, &sid) >= 0 && sid.format == MPV_FORMAT_INT64) autoSubtitle->setChecked(sid.u.int64 < 0);
-    mpv_free_node_contents(&sid);
-    connect(autoSubtitle, &QAction::triggered, this, [this] {
-        static char noSubtitle[] = "no";
-        char* value = noSubtitle;
-        mpv_set_property_async(m_mpv, 0, "sid", MPV_FORMAT_STRING, &value);
-    });
-    for (int i = 0; i < list->num; ++i) {
-        const mpv_node& track = list->values[i];
-        if (track.format != MPV_FORMAT_NODE_MAP || !track.u.list) continue;
-        const QString type = nodeString(mapValue(track.u.list, "type"));
-        const int id = nodeInt(mapValue(track.u.list, "id"));
-        if (id < 0) continue;
-        const QString lang = nodeString(mapValue(track.u.list, "lang"));
-        const QString title = nodeString(mapValue(track.u.list, "title"));
-        const QString external = nodeString(mapValue(track.u.list, "external-filename"));
-        const bool selected = nodeFlag(mapValue(track.u.list, "selected"));
-        QString label = title;
-        if (label.isEmpty()) label = lang;
-        if (label.isEmpty() && !external.isEmpty()) label = QFileInfo(external).fileName();
-        if (label.isEmpty()) label = QStringLiteral("Track %1").arg(id);
-        if (!lang.isEmpty() && title != lang) label += QStringLiteral(" (%1)").arg(lang);
-        if (type == QStringLiteral("audio")) {
-            addTrack(audioMenu, label, id, selected, "aid");
-            hasAudio = true;
-        } else if (type == QStringLiteral("sub")) {
-            auto* action = subtitleMenu->addAction(label);
-            action->setCheckable(true);
-            action->setChecked(selected);
-            connect(action, &QAction::triggered, this, [this, id] {
-                int64_t value = id;
-                mpv_set_property_async(m_mpv, 0, "sid", MPV_FORMAT_INT64, &value);
-            });
-            hasSubtitles = true;
-        }
-    }
-    audioMenu->setEnabled(hasAudio);
-    subtitleMenu->setEnabled(hasSubtitles || subtitleMenu->actions().size() > 0);
-    if (auto* button = qobject_cast<QPushButton*>(sender())) menu->popup(button->mapToGlobal(QPoint(0, button->height())));
-    else menu->popup(QCursor::pos());
-    mpv_free_node_contents(&tracks);
-}
-
 void MainWindow::pumpMpvEvents() {
     if (!m_mpv) return;
     while (true) {
@@ -925,7 +605,7 @@ void MainWindow::pumpMpvEvents() {
             if (end && end->reason == MPV_END_FILE_REASON_EOF && m_autoplayPlaylist) {
                 const int finishedIndex = m_currentPlaylistIndex;
                 QTimer::singleShot(0, this, [this, finishedIndex] {
-                    if (m_autoplayPlaylist && m_currentPlaylistIndex == finishedIndex)
+                    if (m_autoplayPlaylist && m_currentPlaylistIndex == finishedIndex && !m_autoplayTransitionPending)
                         playNext();
                 });
             }
@@ -947,6 +627,19 @@ void MainWindow::updatePlaybackUi() {
     updatePlayButton(paused != 0);
     updateHardwareButton();
     syncPlaylistSelection();
+
+    if (m_autoplayPlaylist && !m_autoplayTransitionPending && m_currentPlaylistIndex >= 0 &&
+        m_currentPlaylistIndex + 1 < m_playlist->count() && duration > 0.0 &&
+        pos >= duration - 0.35) {
+        m_autoplayTransitionPending = true;
+        const int finishedIndex = m_currentPlaylistIndex;
+        QTimer::singleShot(0, this, [this, finishedIndex] {
+            if (m_autoplayPlaylist && m_currentPlaylistIndex == finishedIndex)
+                playNext();
+            else
+                m_autoplayTransitionPending = false;
+        });
+    }
 }
 
 void MainWindow::updatePlayButton(bool paused) { m_playButton->setText(paused ? QStringLiteral("▶") : QStringLiteral("Ⅱ")); }
@@ -968,7 +661,7 @@ void MainWindow::addFolder() {
     for (const QFileInfo& info : files) if (isMediaFile(info)) addToPlaylist(info.absoluteFilePath());
     if (wasEmpty && m_playlist->currentItem()) playlistActivated();
 }
-void MainWindow::clearPlaylist() { if (m_playlist) m_playlist->clear(); m_currentPlaylistIndex = -1; }
+void MainWindow::clearPlaylist() { if (m_playlist) m_playlist->clear(); m_currentPlaylistIndex = -1; m_autoplayTransitionPending = false; }
 void MainWindow::playlistActivated() { if (m_playlist && m_playlist->currentItem()) playPlaylistIndex(m_playlist->currentRow()); }
 void MainWindow::playPrevious() { if (!m_playlist || m_playlist->count() == 0) return; int index = m_currentPlaylistIndex >= 0 ? m_currentPlaylistIndex : m_playlist->currentRow(); if (index > 0) playPlaylistIndex(index - 1); }
 void MainWindow::playNext() { if (!m_playlist || m_playlist->count() == 0) return; int index = m_currentPlaylistIndex >= 0 ? m_currentPlaylistIndex : m_playlist->currentRow(); if (index + 1 < m_playlist->count()) playPlaylistIndex(index + 1); }
@@ -1001,7 +694,6 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
     if (keyMatches(event, m_zoomResetKey)) { resetVideoTransform(); event->accept(); return; }
     if (keyMatches(event, m_frameBackKey)) { stepFrame(false); event->accept(); return; }
     if (keyMatches(event, m_frameForwardKey)) { stepFrame(true); event->accept(); return; }
-
     switch (event->key()) {
     case Qt::Key_Space: togglePause(); break;
     case Qt::Key_Up: playPrevious(); break;
@@ -1019,7 +711,6 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
         setControlsVisible(true);
         m_fullscreenHideTimer.start();
     }
-
     if (watched == m_seekSlider && event->type() == QEvent::MouseButtonPress) {
         const auto* e = static_cast<QMouseEvent*>(event);
         if (e->button() == Qt::LeftButton) {
@@ -1029,16 +720,13 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
             opt.minimum = m_seekSlider->minimum();
             opt.maximum = m_seekSlider->maximum();
             opt.sliderPosition = m_seekSlider->sliderPosition();
-            const QRect handle = m_seekSlider->style()->subControlRect(
-                QStyle::CC_Slider, &opt, QStyle::SC_SliderHandle, m_seekSlider);
+            const QRect handle = m_seekSlider->style()->subControlRect(QStyle::CC_Slider, &opt, QStyle::SC_SliderHandle, m_seekSlider);
             if (!handle.contains(e->position().toPoint())) {
-                const QRect groove = m_seekSlider->style()->subControlRect(
-                    QStyle::CC_Slider, &opt, QStyle::SC_SliderGroove, m_seekSlider);
+                const QRect groove = m_seekSlider->style()->subControlRect(QStyle::CC_Slider, &opt, QStyle::SC_SliderGroove, m_seekSlider);
                 const int span = std::max(1, groove.width());
                 const int x = static_cast<int>(e->position().x());
                 const int position = std::clamp(x - groove.left(), 0, span);
-                const int value = QStyle::sliderValueFromPosition(
-                    opt.minimum, opt.maximum, position, span, opt.upsideDown);
+                const int value = QStyle::sliderValueFromPosition(opt.minimum, opt.maximum, position, span, opt.upsideDown);
                 m_seekSlider->setValue(value);
                 m_seeking = false;
                 seekTo(value);
@@ -1047,9 +735,7 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
         }
         return QMainWindow::eventFilter(watched, event);
     }
-
     if (watched != m_videoWidget) return QMainWindow::eventFilter(watched, event);
-
     if (event->type() == QEvent::MouseButtonDblClick) {
         const auto* e = static_cast<QMouseEvent*>(event);
         if (m_doubleClickZones && m_doubleClickButton != Qt::NoButton && e->button() == m_doubleClickButton) {
@@ -1061,7 +747,6 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
             return true;
         }
     }
-
     if (event->type() == QEvent::MouseButtonPress) {
         const auto* e = static_cast<QMouseEvent*>(event);
         if (m_panButton != Qt::NoButton && e->button() == m_panButton) {
@@ -1072,7 +757,6 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
             return true;
         }
     }
-
     if (event->type() == QEvent::MouseMove && m_panningVideo) {
         const auto* e = static_cast<QMouseEvent*>(event);
         const QPointF delta = e->position() - m_panStart;
@@ -1085,7 +769,6 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
         m_panStart = e->position();
         return true;
     }
-
     if (event->type() == QEvent::MouseButtonRelease) {
         const auto* e = static_cast<QMouseEvent*>(event);
         if (e->button() == m_panButton && m_panningVideo) {
@@ -1093,238 +776,15 @@ bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
             return true;
         }
     }
-
     if (event->type() == QEvent::Wheel) {
         const auto* e = static_cast<QWheelEvent*>(event);
         const int delta = !e->angleDelta().isNull() ? e->angleDelta().y() : e->pixelDelta().y();
         if (delta == 0) return false;
         const Qt::KeyboardModifiers modifiers = e->modifiers() & (Qt::ShiftModifier | Qt::ControlModifier | Qt::AltModifier | Qt::MetaModifier);
-        if (wheelModeMatches(m_zoomWheelMode, modifiers)) {
-            adjustVideoZoom(delta > 0 ? 0.1 : -0.1);
-            return true;
-        }
-        if (wheelModeMatches(m_volumeWheelMode, modifiers)) {
-            m_volumeSlider->setValue(std::clamp(m_volumeSlider->value() + (delta > 0 ? 5 : -5), 0, 100));
-            return true;
-        }
-        if (wheelModeMatches(m_seekWheelMode, modifiers)) {
-            if (delta > 0) seekForward();
-            else seekBackward();
-            return true;
-        }
+        if (wheelModeMatches(m_zoomWheelMode, modifiers)) { adjustVideoZoom(delta > 0 ? 0.1 : -0.1); return true; }
+        if (wheelModeMatches(m_volumeWheelMode, modifiers)) { m_volumeSlider->setValue(std::clamp(m_volumeSlider->value() + (delta > 0 ? 5 : -5), 0, 100)); return true; }
+        if (wheelModeMatches(m_seekWheelMode, modifiers)) { if (delta > 0) seekForward(); else seekBackward(); return true; }
         return false;
     }
-
     return QMainWindow::eventFilter(watched, event);
 }
-
-void MainWindow::toggleControls() {
-    QDialog dialog(this);
-    dialog.setWindowTitle(QStringLiteral("Video Information"));
-    dialog.setModal(true);
-    dialog.resize(720, 700);
-
-    auto* mainLayout = new QVBoxLayout(&dialog);
-    auto* scrollArea = new QScrollArea(&dialog);
-    scrollArea->setWidgetResizable(true);
-    auto* content = new QWidget(scrollArea);
-    auto* layout = new QVBoxLayout(content);
-    layout->setContentsMargins(12, 12, 12, 12);
-    layout->setSpacing(8);
-
-    auto valueOrDash = [this](const char* property) {
-        const QString value = getPropertyString(property).trimmed();
-        return value.isEmpty() ? QStringLiteral("—") : value;
-    };
-    auto numberOrDash = [this](const char* property, int decimals = 2) {
-        const double value = getPropertyDouble(property);
-        return value > 0.0 ? QString::number(value, 'f', decimals) : QStringLiteral("—");
-    };
-    auto addSection = [&layout](const QString& title) {
-        auto* label = new QLabel(title, layout->parentWidget());
-        label->setStyleSheet(QStringLiteral("font-weight:600; font-size:14px; margin-top:6px;"));
-        layout->addWidget(label);
-    };
-    auto addRow = [&layout](const QString& name, const QString& value) {
-        auto* row = new QFormLayout();
-        row->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-        auto* label = new QLabel(value, layout->parentWidget());
-        label->setTextInteractionFlags(Qt::TextSelectableByMouse);
-        label->setWordWrap(true);
-        row->addRow(name, label);
-        layout->addLayout(row);
-    };
-
-    if (!m_mpv || getPropertyString("filename").isEmpty()) {
-        layout->addWidget(new QLabel(QStringLiteral("No media is currently loaded."), content));
-    } else {
-        addSection(QStringLiteral("File"));
-        addRow(QStringLiteral("File name"), valueOrDash("filename"));
-        addRow(QStringLiteral("Title"), valueOrDash("media-title"));
-        addRow(QStringLiteral("Path"), valueOrDash("path"));
-        addRow(QStringLiteral("Container"), valueOrDash("file-format"));
-        addRow(QStringLiteral("File size"), valueOrDash("file-size"));
-        addRow(QStringLiteral("Duration"), formatTime(getPropertyDouble("duration")));
-        addRow(QStringLiteral("Overall bitrate"), valueOrDash("bitrate"));
-
-        addSection(QStringLiteral("Video"));
-        addRow(QStringLiteral("Codec"), valueOrDash("video-codec"));
-        addRow(QStringLiteral("Format"), valueOrDash("video-format"));
-        addRow(QStringLiteral("Resolution"), QStringLiteral("%1 × %2").arg(numberOrDash("width", 0), numberOrDash("height", 0)));
-        addRow(QStringLiteral("FPS"), valueOrDash("container-fps"));
-        addRow(QStringLiteral("Bitrate"), valueOrDash("video-bitrate"));
-        addRow(QStringLiteral("Pixel format"), valueOrDash("video-params/pixelformat"));
-        addRow(QStringLiteral("Chroma location"), valueOrDash("video-params/chroma-location"));
-        addRow(QStringLiteral("Color matrix"), valueOrDash("video-params/colormatrix"));
-        addRow(QStringLiteral("Color primaries"), valueOrDash("video-params/primaries"));
-        addRow(QStringLiteral("Transfer"), valueOrDash("video-params/transfer"));
-        addRow(QStringLiteral("Rotation"), valueOrDash("video-params/rotate"));
-        addRow(QStringLiteral("Aspect ratio"), valueOrDash("video-params/aspect"));
-        addRow(QStringLiteral("HW decoder"), valueOrDash("hwdec-current"));
-
-        addSection(QStringLiteral("Audio"));
-        addRow(QStringLiteral("Codec"), valueOrDash("audio-codec-name"));
-        addRow(QStringLiteral("Format"), valueOrDash("audio-format"));
-        addRow(QStringLiteral("Sample rate"), valueOrDash("audio-params/samplerate"));
-        addRow(QStringLiteral("Channels"), valueOrDash("audio-params/channel-count"));
-        addRow(QStringLiteral("Channel layout"), valueOrDash("audio-params/channel-layout"));
-        addRow(QStringLiteral("Bitrate"), valueOrDash("audio-bitrate"));
-
-        addSection(QStringLiteral("Tracks"));
-        mpv_node tracks{};
-        bool haveTracks = false;
-        if (mpv_get_property(m_mpv, "track-list", MPV_FORMAT_NODE, &tracks) >= 0 &&
-            tracks.format == MPV_FORMAT_NODE_ARRAY && tracks.u.list) {
-            for (int i = 0; i < tracks.u.list->num; ++i) {
-                const mpv_node& track = tracks.u.list->values[i];
-                if (track.format != MPV_FORMAT_NODE_MAP || !track.u.list) continue;
-                const QString type = nodeString(mapValue(track.u.list, "type"));
-                const int id = nodeInt(mapValue(track.u.list, "id"));
-                if (id < 0) continue;
-                QString label = nodeString(mapValue(track.u.list, "title"));
-                const QString lang = nodeString(mapValue(track.u.list, "lang"));
-                const QString codec = nodeString(mapValue(track.u.list, "codec"));
-                const QString external = nodeString(mapValue(track.u.list, "external-filename"));
-                const bool selected = nodeFlag(mapValue(track.u.list, "selected"));
-                if (label.isEmpty()) label = lang;
-                if (label.isEmpty()) label = external.isEmpty() ? QStringLiteral("Track") : QFileInfo(external).fileName();
-                if (label.isEmpty()) label = QStringLiteral("Track");
-                QString details = QStringLiteral("#%1 — %2").arg(id).arg(label);
-                if (!lang.isEmpty() && label != lang) details += QStringLiteral(" [%1]").arg(lang);
-                if (!codec.isEmpty()) details += QStringLiteral(" • %1").arg(codec);
-                if (!external.isEmpty()) details += QStringLiteral(" • %1").arg(QFileInfo(external).fileName());
-                if (selected) details += QStringLiteral("  ✓ Active");
-                const QString section = type == QStringLiteral("video") ? QStringLiteral("Video track")
-                    : type == QStringLiteral("audio") ? QStringLiteral("Audio track")
-                    : type == QStringLiteral("sub") ? QStringLiteral("Subtitle track")
-                    : QStringLiteral("Other track");
-                addRow(section, details);
-                haveTracks = true;
-            }
-        }
-        mpv_free_node_contents(&tracks);
-        if (!haveTracks) addRow(QStringLiteral("Available"), QStringLiteral("No track information available."));
-
-        addSection(QStringLiteral("Playback / Output"));
-        addRow(QStringLiteral("Position"), QStringLiteral("%1 / %2").arg(formatTime(getPropertyDouble("time-pos")), formatTime(getPropertyDouble("duration"))));
-        addRow(QStringLiteral("Speed"), numberOrDash("speed"));
-        addRow(QStringLiteral("Pause"), valueOrDash("pause"));
-        addRow(QStringLiteral("Video output"), valueOrDash("vo"));
-        addRow(QStringLiteral("GPU API"), valueOrDash("gpu-api"));
-        addRow(QStringLiteral("Hardware decoding"), valueOrDash("hwdec-current"));
-    }
-
-    scrollArea->setWidget(content);
-    mainLayout->addWidget(scrollArea, 1);
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
-    connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
-    mainLayout->addWidget(buttons);
-    dialog.exec();
-}
-
-void MainWindow::toggleFullscreen() {
-    if (isFullScreen()) {
-        m_fullscreenHideTimer.stop();
-        setControlsVisible(true);
-        if (m_playlistDock) m_playlistDock->setVisible(m_playlistWasVisibleBeforeFullscreen);
-        showNormal();
-        return;
-    }
-
-    m_playlistWasVisibleBeforeFullscreen = m_playlistDock && m_playlistDock->isVisible();
-    if (m_playlistDock) m_playlistDock->hide();
-    setControlsVisible(false);
-    showFullScreen();
-}
-
-void MainWindow::showDisplayDialog() {
-    QDialog dialog(this);
-    dialog.setWindowTitle(QStringLiteral("Display"));
-    dialog.setModal(true);
-    dialog.resize(460, 280);
-
-    auto* layout = new QVBoxLayout(&dialog);
-    auto* form = new QFormLayout();
-    form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
-
-    const int currentSaturation = std::clamp(static_cast<int>(std::lround(getPropertyDouble("saturation"))), -100, 100);
-    const int currentBrightness = std::clamp(static_cast<int>(std::lround(getPropertyDouble("brightness"))), -100, 100);
-    const int currentContrast = std::clamp(static_cast<int>(std::lround(getPropertyDouble("contrast"))), -100, 100);
-
-    auto makeSlider = [&](const QString& name, int value, const char* property, int* storedValue, const char* settingKey) {
-        auto* row = new QWidget(&dialog);
-        auto* rowLayout = new QHBoxLayout(row);
-        rowLayout->setContentsMargins(0, 0, 0, 0);
-        auto* slider = new QSlider(Qt::Horizontal, row);
-        slider->setRange(-100, 100);
-        slider->setValue(value);
-        auto* valueLabel = new QLabel(QString::number(value), row);
-        valueLabel->setMinimumWidth(42);
-        valueLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-        rowLayout->addWidget(slider, 1);
-        rowLayout->addWidget(valueLabel);
-        connect(slider, &QSlider::valueChanged, &dialog, [this, property, storedValue, settingKey, valueLabel](int v) {
-            valueLabel->setText(QString::number(v));
-            *storedValue = v;
-            setPropertyDouble(property, v);
-            QSettings settings(QStringLiteral("REX Player"), QStringLiteral("REX Player"));
-            settings.setValue(QString::fromUtf8(settingKey), v);
-            settings.sync();
-        });
-        form->addRow(name, row);
-        return slider;
-    };
-
-    auto* saturation = makeSlider(QStringLiteral("Saturation"), currentSaturation, "saturation", &m_saturation, "display/saturation");
-    auto* brightness = makeSlider(QStringLiteral("Brightness"), currentBrightness, "brightness", &m_brightness, "display/brightness");
-    auto* contrast = makeSlider(QStringLiteral("Contrast"), currentContrast, "contrast", &m_contrast, "display/contrast");
-    layout->addLayout(form);
-
-    auto* note = new QLabel(QStringLiteral("Range: −100 to +100. Changes are applied and remembered immediately."), &dialog);
-    note->setWordWrap(true);
-    layout->addWidget(note);
-
-    auto* buttons = new QDialogButtonBox(QDialogButtonBox::Close, &dialog);
-    auto* reset = buttons->addButton(QStringLiteral("Reset defaults"), QDialogButtonBox::ResetRole);
-    layout->addWidget(buttons);
-    connect(reset, &QPushButton::clicked, &dialog, [&] {
-        saturation->setValue(0);
-        brightness->setValue(0);
-        contrast->setValue(0);
-    });
-    connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::accept);
-
-    dialog.adjustSize();
-    const int margin = 16;
-    const QSize size = dialog.size();
-    const QPoint global = mapToGlobal(QPoint(
-        std::max(margin, width() - size.width() - margin),
-        std::max(margin, height() - size.height() - margin)));
-    dialog.move(global);
-    dialog.exec();
-}
-void MainWindow::setControlsVisible(bool visible) { if (m_controls) m_controls->setVisible(visible); }
-void MainWindow::togglePlaylist() { if (m_playlistDock) m_playlistDock->setVisible(!m_playlistDock->isVisible()); }
-void MainWindow::closeEvent(QCloseEvent* event) { if (m_mpv) { const char* args[] = {"quit", nullptr}; mpv_command(m_mpv, args); } QMainWindow::closeEvent(event); }
-void MainWindow::showError(const QString& message) { setWindowTitle(QStringLiteral("REX Player — %1").arg(message)); }
