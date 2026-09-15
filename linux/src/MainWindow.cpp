@@ -166,6 +166,11 @@ void MainWindow::buildUi() {
     m_abLoopLabel = new QLabel(QStringLiteral("A-B: Off"), m_controls);
     m_abLoopLabel->setToolTip(QStringLiteral("A: set loop start, B: set loop end, L: clear loop"));
     row->addWidget(m_abLoopLabel);
+    m_hwButton = new QPushButton(QStringLiteral("SW"), m_controls);
+    m_hwButton->setFixedWidth(48);
+    m_hwButton->setToolTip(QStringLiteral("Software decoding. Click to enable hardware decoding when supported."));
+    connect(m_hwButton, &QPushButton::clicked, this, &MainWindow::toggleHardwareDecoding);
+    row->addWidget(m_hwButton);
     row->addStretch();
     row->addWidget(new QLabel(QStringLiteral("Volume"), m_controls));
     m_volumeSlider = new QSlider(Qt::Horizontal, m_controls);
@@ -238,6 +243,7 @@ bool MainWindow::initializeMpv() {
         mpv_set_option_string(m_mpv, "terminal", "no") < 0 ||
         mpv_set_option_string(m_mpv, "osc", "no") < 0 ||
         mpv_set_option_string(m_mpv, "keep-open", "yes") < 0 ||
+        mpv_set_option_string(m_mpv, "hwdec", "auto") < 0 ||
         mpv_set_option_string(m_mpv, "input-vo-keyboard", "no") < 0 ||
         mpv_set_option_string(m_mpv, "input-cursor-passthrough", "yes") < 0) {
         showError(QStringLiteral("Could not configure libmpv.")); return false;
@@ -291,6 +297,7 @@ void MainWindow::seekForward() { const char* args[] = {"seek", "10", "relative",
 void MainWindow::seekTo(int value) { const double duration = getPropertyDouble("duration"); if (duration > 0) setPropertyDouble("time-pos", duration * value / 1000.0); }
 void MainWindow::setVolume(int value) { setPropertyDouble("volume", value); }
 double MainWindow::getPropertyDouble(const char* name) const { if (!m_mpv) return 0.0; double value = 0.0; return mpv_get_property(m_mpv, name, MPV_FORMAT_DOUBLE, &value) >= 0 ? value : 0.0; }
+QString MainWindow::getPropertyString(const char* name) const { if (!m_mpv) return {}; char* value = nullptr; if (mpv_get_property(m_mpv, name, MPV_FORMAT_STRING, &value) < 0 || !value) return {}; const QString result = QString::fromUtf8(value); mpv_free(value); return result; }
 void MainWindow::setPropertyDouble(const char* name, double value) { if (m_mpv) mpv_set_property_async(m_mpv, 0, name, MPV_FORMAT_DOUBLE, &value); }
 void MainWindow::adjustVideoZoom(double amount) { setPropertyDouble("video-zoom", std::clamp(getPropertyDouble("video-zoom") + amount, -2.0, 3.0)); }
 void MainWindow::resetVideoTransform() { setPropertyDouble("video-zoom", 0.0); setPropertyDouble("video-pan-x", 0.0); setPropertyDouble("video-pan-y", 0.0); m_videoPanX = 0.0; m_videoPanY = 0.0; }
@@ -299,6 +306,16 @@ void MainWindow::setAbLoopEnd() { const double position = getPropertyDouble("tim
 void MainWindow::clearAbLoop() { static char noLoop[] = "no"; char* value = noLoop; if (m_mpv) { mpv_set_property_async(m_mpv, 0, "ab-loop-a", MPV_FORMAT_STRING, &value); mpv_set_property_async(m_mpv, 0, "ab-loop-b", MPV_FORMAT_STRING, &value); } m_abLoopStart = -1.0; m_abLoopEnd = -1.0; updateAbLoopLabel(); }
 void MainWindow::updateAbLoopLabel() { if (!m_abLoopLabel) return; if (m_abLoopStart < 0.0) m_abLoopLabel->setText(QStringLiteral("A-B: Off")); else if (m_abLoopEnd < 0.0) m_abLoopLabel->setText(QStringLiteral("A-B: %1 — …").arg(formatTime(m_abLoopStart))); else m_abLoopLabel->setText(QStringLiteral("A-B: %1 — %2").arg(formatTime(m_abLoopStart), formatTime(m_abLoopEnd))); }
 void MainWindow::stepFrame(bool forward) { const char* args[] = {forward ? "frame-step" : "frame-back-step", nullptr}; command(args); }
+void MainWindow::toggleHardwareDecoding() { if (!m_mpv) return; const char* args[] = {"cycle-values", "hwdec", "auto", "no", nullptr}; command(args); }
+void MainWindow::updateHardwareButton() {
+    if (!m_hwButton || !m_mpv) return;
+    const QString current = getPropertyString("hwdec-current").trimmed().toLower();
+    const bool hardwareActive = !current.isEmpty() && current != QStringLiteral("no");
+    m_hwButton->setText(hardwareActive ? QStringLiteral("HW") : QStringLiteral("SW"));
+    m_hwButton->setToolTip(hardwareActive
+        ? QStringLiteral("Hardware decoding active (%1). Click to switch to software decoding.").arg(current)
+        : QStringLiteral("Software decoding active. Click to enable hardware decoding when supported."));
+}
 
 void MainWindow::showTracksMenu() {
     if (!m_mpv) return;
@@ -330,7 +347,7 @@ void MainWindow::showTracksMenu() {
 }
 
 void MainWindow::pumpMpvEvents() { if (!m_mpv) return; while (true) { mpv_event* event = mpv_wait_event(m_mpv, 0); if (!event || event->event_id == MPV_EVENT_NONE) break; if (event->event_id == MPV_EVENT_END_FILE) { auto* end = static_cast<mpv_event_end_file*>(event->data); if (end && end->reason == MPV_END_FILE_REASON_EOF) playNext(); } else if (event->event_id == MPV_EVENT_SHUTDOWN) { close(); break; } } }
-void MainWindow::updatePlaybackUi() { if (!m_mpv) return; const double pos = getPropertyDouble("time-pos"); const double duration = getPropertyDouble("duration"); int paused = 0; if (mpv_get_property(m_mpv, "pause", MPV_FORMAT_FLAG, &paused) < 0) paused = 0; if (!m_seeking) m_seekSlider->setValue(duration > 0 ? static_cast<int>(std::clamp(pos / duration, 0.0, 1.0) * 1000.0) : 0); m_timeLabel->setText(QStringLiteral("%1 / %2").arg(formatTime(pos), formatTime(duration))); updatePlayButton(paused != 0); syncPlaylistSelection(); }
+void MainWindow::updatePlaybackUi() { if (!m_mpv) return; const double pos = getPropertyDouble("time-pos"); const double duration = getPropertyDouble("duration"); int paused = 0; if (mpv_get_property(m_mpv, "pause", MPV_FORMAT_FLAG, &paused) < 0) paused = 0; if (!m_seeking) m_seekSlider->setValue(duration > 0 ? static_cast<int>(std::clamp(pos / duration, 0.0, 1.0) * 1000.0) : 0); m_timeLabel->setText(QStringLiteral("%1 / %2").arg(formatTime(pos), formatTime(duration))); updatePlayButton(paused != 0); updateHardwareButton(); syncPlaylistSelection(); }
 void MainWindow::updatePlayButton(bool paused) { m_playButton->setText(paused ? QStringLiteral("▶") : QStringLiteral("Ⅱ")); }
 QString MainWindow::formatTime(double seconds) const { if (!std::isfinite(seconds) || seconds < 0) seconds = 0; const int total = static_cast<int>(seconds); const int h = total / 3600, m = (total % 3600) / 60, s = total % 60; return h > 0 ? QStringLiteral("%1:%2:%3").arg(h).arg(m,2,10,QLatin1Char('0')).arg(s,2,10,QLatin1Char('0')) : QStringLiteral("%1:%2").arg(m).arg(s,2,10,QLatin1Char('0')); }
 void MainWindow::openFile() { const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("Open video")); if (!path.isEmpty()) loadFile(path); }
