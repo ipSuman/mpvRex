@@ -219,12 +219,14 @@ void MainWindow::buildUi() {
     m_abLoopLabel->setToolTip(QStringLiteral("A: set loop start, B: set loop end, L: clear loop"));
     row->addWidget(m_abLoopLabel);
     m_cutAbButton = new QPushButton(QStringLiteral("Cut AB"), m_controls);
-    m_cutAbButton->setFixedWidth(62);
+    m_cutAbButton->setMinimumWidth(76);
+    m_cutAbButton->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     m_cutAbButton->setToolTip(QStringLiteral("Cut the current A-B selection with FFmpeg without re-encoding"));
     connect(m_cutAbButton, &QPushButton::clicked, this, &MainWindow::cutAbSelection);
     row->addWidget(m_cutAbButton);
     m_logButton = new QPushButton(QStringLiteral("Save Log"), m_controls);
-    m_logButton->setFixedWidth(72);
+    m_logButton->setMinimumWidth(84);
+    m_logButton->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     m_logButton->setToolTip(QStringLiteral("Save a diagnostic log report"));
     connect(m_logButton, &QPushButton::clicked, this, &MainWindow::saveLogReport);
     row->addWidget(m_logButton);
