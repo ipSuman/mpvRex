@@ -1,41 +1,63 @@
-name: Add Linux log report
+name: Build Linux player
 
 on:
   push:
     branches: [linux]
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 jobs:
-  apply:
+  build:
     runs-on: ubuntu-24.04
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Apply log report changes
+      - name: Apply Save Log update
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
           h = Path("linux/src/MainWindow.h")
           s = h.read_text()
-          s = s.replace("    void cutAbSelection();\n", "    void cutAbSelection();\n    void saveLogReport();\n")
-          s = s.replace("    QPushButton* m_cutAbButton = nullptr;\n", "    QPushButton* m_cutAbButton = nullptr;\n    QPushButton* m_logButton = nullptr;\n")
+          if "void saveLogReport();" not in s:
+              marker = "    void cutAbSelection();\n"
+              if marker not in s:
+                  raise SystemExit("MainWindow.h insertion point not found")
+              s = s.replace(marker, marker + "    void saveLogReport();\n", 1)
+          if "QPushButton* m_logButton" not in s:
+              marker = "    QPushButton* m_cutAbButton = nullptr;\n"
+              if marker not in s:
+                  raise SystemExit("MainWindow.h button insertion point not found")
+              s = s.replace(marker, marker + "    QPushButton* m_logButton = nullptr;\n", 1)
           h.write_text(s)
 
           cpp = Path("linux/src/MainWindow.cpp")
           s = cpp.read_text()
-          s = s.replace("#include <QPushButton>\n", "#include <QPushButton>\n#include <QDateTime>\n#include <QSysInfo>\n#include <QTextStream>\n")
+          for inc, anchor in [
+              ("#include <QDateTime>\n", "#include <QDir>\n"),
+              ("#include <QSysInfo>\n", "#include <QStandardPaths>\n"),
+              ("#include <QTextStream>\n", "#include <QStyle>\n"),
+          ]:
+              if inc not in s:
+                  if anchor not in s:
+                      raise SystemExit(f"include insertion point not found: {anchor}")
+                  s = s.replace(anchor, anchor + inc, 1)
 
-          old = '''    connect(m_cutAbButton, &QPushButton::clicked, this, &MainWindow::cutAbSelection);\n    row->addWidget(m_cutAbButton);\n    m_hwButton = new QPushButton(QStringLiteral("SW"), m_controls);'''
-          new = '''    connect(m_cutAbButton, &QPushButton::clicked, this, &MainWindow::cutAbSelection);\n    row->addWidget(m_cutAbButton);\n    m_logButton = new QPushButton(QStringLiteral("Save Log"), m_controls);\n    m_logButton->setFixedWidth(72);\n    m_logButton->setToolTip(QStringLiteral("Save a diagnostic log report"));\n    connect(m_logButton, &QPushButton::clicked, this, &MainWindow::saveLogReport);\n    row->addWidget(m_logButton);\n    m_hwButton = new QPushButton(QStringLiteral("SW"), m_controls);'''
-          if old not in s: raise SystemExit("log button insertion point not found")
-          s = s.replace(old, new)
+          button_old = '''    connect(m_cutAbButton, &QPushButton::clicked, this, &MainWindow::cutAbSelection);\n    row->addWidget(m_cutAbButton);\n    m_hwButton = new QPushButton(QStringLiteral("SW"), m_controls);'''
+          button_new = '''    connect(m_cutAbButton, &QPushButton::clicked, this, &MainWindow::cutAbSelection);\n    row->addWidget(m_cutAbButton);\n    m_logButton = new QPushButton(QStringLiteral("Save Log"), m_controls);\n    m_logButton->setFixedWidth(72);\n    m_logButton->setToolTip(QStringLiteral("Save a diagnostic log report"));\n    connect(m_logButton, &QPushButton::clicked, this, &MainWindow::saveLogReport);\n    row->addWidget(m_logButton);\n    m_hwButton = new QPushButton(QStringLiteral("SW"), m_controls);'''
+          if "m_logButton = new QPushButton" not in s:
+              if button_old not in s:
+                  raise SystemExit("Save Log button insertion point not found")
+              s = s.replace(button_old, button_new, 1)
 
-          old = '''void MainWindow::updateHardwareButton() {'''
-          new = r'''void MainWindow::saveLogReport() {
+          if "void MainWindow::saveLogReport()" not in s:
+              marker = "void MainWindow::updateHardwareButton() {"
+              if marker not in s:
+                  raise SystemExit("updateHardwareButton insertion point not found")
+              method = r'''void MainWindow::saveLogReport() {
     const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss"));
     const QString defaultName = QDir::home().filePath(QStringLiteral("REX_Player_Log_%1.txt").arg(timestamp));
     const QString path = QFileDialog::getSaveFileName(
@@ -51,8 +73,8 @@ jobs:
     }
 
     QTextStream out(&file);
-    out << "REX Player — Diagnostic Log Report\n";
-    out << "==================================\n\n";
+    out << "REX Player - Diagnostic Log Report\n";
+    out << "=================================\n\n";
     out << "Generated: " << QDateTime::currentDateTime().toString(Qt::ISODate) << "\n";
     out << "Application: " << QCoreApplication::applicationName() << " " << QCoreApplication::applicationVersion() << "\n";
     out << "Qt: " << QT_VERSION_STR << "\n";
@@ -61,76 +83,77 @@ jobs:
     out << "CPU architecture: " << QSysInfo::currentCpuArchitecture() << "\n";
     out << "Build ABI: " << QSysInfo::buildAbi() << "\n";
     out << "Host name: " << QSysInfo::machineHostName() << "\n";
-    out << "Locale LC_NUMERIC: " << qgetenv("LC_NUMERIC") << "\n";
-    out << "Qt platform: " << qgetenv("QT_QPA_PLATFORM") << "\n";
-    out << "Wayland display: " << qgetenv("WAYLAND_DISPLAY") << "\n";
-    out << "X11 display: " << qgetenv("DISPLAY") << "\n\n";
+    out << "LC_NUMERIC: " << qgetenv("LC_NUMERIC") << "\n";
+    out << "QT_QPA_PLATFORM: " << qgetenv("QT_QPA_PLATFORM") << "\n";
+    out << "WAYLAND_DISPLAY: " << qgetenv("WAYLAND_DISPLAY") << "\n";
+    out << "DISPLAY: " << qgetenv("DISPLAY") << "\n\n";
+
+    auto stringProperty = [this](const char* name) {
+        return getPropertyString(name);
+    };
+    auto doubleProperty = [this](const char* name) {
+        return getPropertyDouble(name);
+    };
+    auto writeString = [&out, &stringProperty](const char* key, const char* label) {
+        const QString value = stringProperty(key);
+        if (!value.isEmpty()) out << label << ": " << value << "\n";
+    };
+    auto writeDouble = [&out, &doubleProperty](const char* key, const char* label) {
+        const double value = doubleProperty(key);
+        if (std::isfinite(value)) out << label << ": " << QString::number(value, 'g', 12) << "\n";
+    };
 
     out << "Playback / Media\n";
     out << "----------------\n";
-    const QList<QPair<QString, QString>> properties = {
-        {QStringLiteral("path"), QStringLiteral("Path")},
-        {QStringLiteral("filename"), QStringLiteral("Filename")},
-        {QStringLiteral("media-title"), QStringLiteral("Media title")},
-        {QStringLiteral("file-format"), QStringLiteral("Container")},
-        {QStringLiteral("duration"), QStringLiteral("Duration")},
-        {QStringLiteral("bitrate"), QStringLiteral("Overall bitrate")},
-        {QStringLiteral("video-codec"), QStringLiteral("Video codec")},
-        {QStringLiteral("video-format"), QStringLiteral("Video format")},
-        {QStringLiteral("video-params/w"), QStringLiteral("Video width")},
-        {QStringLiteral("video-params/h"), QStringLiteral("Video height")},
-        {QStringLiteral("container-fps"), QStringLiteral("Container FPS")},
-        {QStringLiteral("video-bitrate"), QStringLiteral("Video bitrate")},
-        {QStringLiteral("video-params/pixelformat"), QStringLiteral("Pixel format")},
-        {QStringLiteral("video-params/chroma-location"), QStringLiteral("Chroma location")},
-        {QStringLiteral("video-params/colormatrix"), QStringLiteral("Color matrix")},
-        {QStringLiteral("video-params/primaries"), QStringLiteral("Color primaries")},
-        {QStringLiteral("video-params/transfer"), QStringLiteral("Color transfer")},
-        {QStringLiteral("video-params/rotate"), QStringLiteral("Rotation")},
-        {QStringLiteral("audio-codec"), QStringLiteral("Audio codec")},
-        {QStringLiteral("audio-format"), QStringLiteral("Audio format")},
-        {QStringLiteral("audio-samplerate"), QStringLiteral("Audio sample rate")},
-        {QStringLiteral("audio-channels"), QStringLiteral("Audio channels")},
-        {QStringLiteral("audio-channel-layout"), QStringLiteral("Audio channel layout")},
-        {QStringLiteral("audio-bitrate"), QStringLiteral("Audio bitrate")},
-        {QStringLiteral("hwdec"), QStringLiteral("HW decoder setting")},
-        {QStringLiteral("hwdec-current"), QStringLiteral("Active HW decoder")},
-        {QStringLiteral("vo"), QStringLiteral("Video output")},
-        {QStringLiteral("gpu-api"), QStringLiteral("GPU API")},
-        {QStringLiteral("time-pos"), QStringLiteral("Position")},
-        {QStringLiteral("pause"), QStringLiteral("Paused")},
-        {QStringLiteral("speed"), QStringLiteral("Speed")},
-        {QStringLiteral("video-zoom"), QStringLiteral("Video zoom")},
-        {QStringLiteral("video-pan-x"), QStringLiteral("Video pan X")},
-        {QStringLiteral("video-pan-y"), QStringLiteral("Video pan Y")}
-    };
-    for (const auto& property : properties) {
-        const QString value = getPropertyString(property.first.toUtf8().constData());
-        if (!value.isEmpty()) out << property.second << ": " << value << "\n";
-    }
+    writeString("path", "Path");
+    writeString("filename", "Filename");
+    writeString("media-title", "Media title");
+    writeString("file-format", "Container");
+    writeDouble("duration", "Duration (s)");
+    writeDouble("bitrate", "Overall bitrate");
+    writeString("video-codec", "Video codec");
+    writeString("video-format", "Video format");
+    writeDouble("video-params/w", "Video width");
+    writeDouble("video-params/h", "Video height");
+    writeDouble("container-fps", "Container FPS");
+    writeDouble("video-bitrate", "Video bitrate");
+    writeString("video-params/pixelformat", "Pixel format");
+    writeString("video-params/chroma-location", "Chroma location");
+    writeString("video-params/colormatrix", "Color matrix");
+    writeString("video-params/primaries", "Color primaries");
+    writeString("video-params/transfer", "Color transfer");
+    writeDouble("video-params/rotate", "Rotation");
+    writeString("audio-codec", "Audio codec");
+    writeString("audio-format", "Audio format");
+    writeDouble("audio-samplerate", "Audio sample rate");
+    writeString("audio-channels", "Audio channels");
+    writeString("audio-channel-layout", "Audio channel layout");
+    writeDouble("audio-bitrate", "Audio bitrate");
+    writeString("hwdec", "HW decoder setting");
+    writeString("hwdec-current", "Active HW decoder");
+    writeString("vo", "Video output");
+    writeString("gpu-api", "GPU API");
+    writeDouble("time-pos", "Position (s)");
+    writeDouble("speed", "Speed");
+    writeDouble("video-zoom", "Video zoom");
+    writeDouble("video-pan-x", "Video pan X");
+    writeDouble("video-pan-y", "Video pan Y");
+    writeString("pause", "Paused");
 
     out << "\nTracks\n------\n";
     mpv_node tracks{};
-    if (m_mpv && mpv_get_property(m_mpv, "track-list", MPV_FORMAT_NODE, &tracks) >= 0) {
-        if (tracks.format == MPV_FORMAT_NODE_ARRAY && tracks.u.list) {
-            for (int i = 0; i < tracks.u.list->num; ++i) {
-                const mpv_node* track = &tracks.u.list->values[i];
-                const mpv_node* type = mapValue(track->u.list, "type");
-                const mpv_node* id = mapValue(track->u.list, "id");
-                const mpv_node* lang = mapValue(track->u.list, "lang");
-                const mpv_node* title = mapValue(track->u.list, "title");
-                const mpv_node* codec = mapValue(track->u.list, "codec");
-                const mpv_node* external = mapValue(track->u.list, "external-filename");
-                const mpv_node* selected = mapValue(track->u.list, "selected");
-                out << "Track " << (i + 1)
-                    << ": type=" << nodeString(type)
-                    << ", id=" << nodeInt(id)
-                    << ", lang=" << nodeString(lang)
-                    << ", title=" << nodeString(title)
-                    << ", codec=" << nodeString(codec)
-                    << ", external=" << nodeString(external)
-                    << ", selected=" << (nodeFlag(selected) ? "yes" : "no") << "\n";
-            }
+    if (m_mpv && mpv_get_property(m_mpv, "track-list", MPV_FORMAT_NODE, &tracks) >= 0 &&
+        tracks.format == MPV_FORMAT_NODE_ARRAY && tracks.u.list) {
+        for (int i = 0; i < tracks.u.list->num; ++i) {
+            const mpv_node* track = &tracks.u.list->values[i];
+            out << "Track " << (i + 1);
+            out << ": type=" << nodeString(mapValue(track->u.list, "type"));
+            out << ", id=" << nodeInt(mapValue(track->u.list, "id"));
+            out << ", lang=" << nodeString(mapValue(track->u.list, "lang"));
+            out << ", title=" << nodeString(mapValue(track->u.list, "title"));
+            out << ", codec=" << nodeString(mapValue(track->u.list, "codec"));
+            out << ", external=" << nodeString(mapValue(track->u.list, "external-filename"));
+            out << ", selected=" << (nodeFlag(mapValue(track->u.list, "selected")) ? "yes" : "no") << "\n";
         }
         mpv_free_node_contents(&tracks);
     } else {
@@ -162,9 +185,8 @@ jobs:
     if (m_playlist) {
         out << "Count: " << m_playlist->count() << "\n";
         out << "Current index: " << m_currentPlaylistIndex << "\n";
-        for (int i = 0; i < m_playlist->count(); ++i) {
+        for (int i = 0; i < m_playlist->count(); ++i)
             out << (i + 1) << ": " << m_playlist->item(i)->data(Qt::UserRole).toString() << "\n";
-        }
     }
 
     out << "\nEnd of report\n";
@@ -173,38 +195,44 @@ jobs:
                              QStringLiteral("Diagnostic report saved to:\n%1").arg(path));
 }
 
-void MainWindow::updateHardwareButton() {'''
-          if old not in s: raise SystemExit("log method insertion point not found")
-          s = s.replace(old, new)
+'''
+              s = s.replace(marker, method + marker, 1)
 
           cpp.write_text(s)
-
-          readme = Path("linux/README.md")
-          s = readme.read_text()
-          s = s.replace(
-              "- A-B stream-copy cutting through FFmpeg, preserving all mapped streams without re-encoding\n",
-              "- A-B stream-copy cutting through FFmpeg, preserving all mapped streams without re-encoding\n- **Save Log** button for a diagnostic report containing system, playback, codec, track and control details\n"
-          )
-          readme.write_text(s)
           PY
 
-      - name: Build and verify
+      - name: Build and package
         run: |
+          set -e
           git diff --check
           cmake -S linux -B build-linux -DCMAKE_BUILD_TYPE=Release
           cmake --build build-linux --parallel
+          mkdir -p dist/rex-player-linux
+          cp build-linux/rex-player dist/rex-player-linux/rex-player-bin
+          cp linux/rex-player-launcher.sh dist/rex-player-linux/rex-player
+          chmod +x dist/rex-player-linux/rex-player
+          cp linux/README.md dist/rex-player-linux/
+          tar -C dist -czf rex-player-linux.tar.gz rex-player-linux
 
-      - name: Commit changes
+      - name: Commit source changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add linux/src/MainWindow.h linux/src/MainWindow.cpp linux/README.md
-          git commit -m "Add diagnostic log report button"
+          git add linux/src/MainWindow.h linux/src/MainWindow.cpp
+          git commit -m "Add diagnostic log report button" || true
           git push
 
+      - name: Upload Linux build
+        uses: actions/upload-artifact@v4
+        with:
+          name: rex-player-linux
+          path: rex-player-linux.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Remove temporary workflow
-        if: always()
+        if: success()
         run: |
-          git rm .github/workflows/apply-log-report.yml || true
-          git commit -m "Remove temporary log report workflow" || true
-          git push || true
+          git rm .github/workflows/apply-log-report.yml
+          git commit -m "Remove temporary Linux build workflow"
+          git push
