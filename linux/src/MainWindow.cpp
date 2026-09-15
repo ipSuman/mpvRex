@@ -25,6 +25,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <clocale>
 
 #include <mpv/client.h>
 
@@ -245,6 +246,7 @@ void MainWindow::buildUi() {
 }
 
 bool MainWindow::initializeMpv() {
+    std::setlocale(LC_NUMERIC, "C");
     m_mpv = mpv_create();
     if (!m_mpv) { showError(QStringLiteral("Could not create libmpv instance.")); return false; }
 
@@ -252,7 +254,9 @@ bool MainWindow::initializeMpv() {
     if (mpv_set_option_string(m_mpv, "wid", wid.constData()) < 0 ||
         mpv_set_option_string(m_mpv, "terminal", "no") < 0 ||
         mpv_set_option_string(m_mpv, "osc", "no") < 0 ||
-        mpv_set_option_string(m_mpv, "keep-open", "yes") < 0) {
+        mpv_set_option_string(m_mpv, "keep-open", "yes") < 0 ||
+        mpv_set_option_string(m_mpv, "input-vo-keyboard", "no") < 0 ||
+        mpv_set_option_string(m_mpv, "input-cursor-passthrough", "yes") < 0) {
         showError(QStringLiteral("Could not configure libmpv.")); return false;
     }
     if (mpv_initialize(m_mpv) < 0) {
