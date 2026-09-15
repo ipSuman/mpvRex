@@ -13,6 +13,7 @@ This is the first foundation milestone:
 - Basic mpv event pumping
 - CMake-based build
 - HW/SW decoding toggle with live status
+- Video information dialog with file, codec, resolution, audio, subtitle and track details
 
 The Linux player is intentionally being built alongside the Android project rather than attempting to port the Android UI directly.
 
@@ -71,3 +72,12 @@ On the video surface:
 - `HW` means a hardware decoder is actively being used for the current video.
 - `SW` means software decoding is active, including when the current video or hardware setup cannot use a hardware decoder.
 - Clicking the button toggles mpv between `hwdec=auto` and `hwdec=no`.
+
+## Video information
+
+- The **☰** button opens a scrollable information dialog instead of an on-screen mpv overlay.
+- It shows details for the currently loaded media, including the file/container, title and path, size, duration and bitrate.
+- Video details include codec, format, resolution, FPS, bitrate, pixel/color information, rotation, aspect ratio and active hardware decoder.
+- Audio details include codec, format, sample rate, channels, channel layout and bitrate.
+- The tracks section lists video, audio and subtitle tracks, languages/titles, codecs, external subtitle files and the active track.
+- Playback/output details include current position, speed, pause state, video output and GPU API.
