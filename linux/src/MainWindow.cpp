@@ -36,6 +36,7 @@
 #include <QUrl>
 #include <QSettings>
 #include <QScrollArea>
+#include <QShortcut>
 #include <QSlider>
 #include <QSpinBox>
 #include <QVBoxLayout>
@@ -119,6 +120,13 @@ MainWindow::MainWindow(const QString& mediaPath, QWidget* parent)
     loadControlSettings();
     buildUi();
 
+    auto* enterFullscreenShortcut = new QShortcut(QKeySequence(Qt::Key_Return), this);
+    enterFullscreenShortcut->setContext(Qt::WindowShortcut);
+    connect(enterFullscreenShortcut, &QShortcut::activated, this, &MainWindow::toggleFullscreen);
+    auto* keypadEnterFullscreenShortcut = new QShortcut(QKeySequence(Qt::Key_Enter), this);
+    keypadEnterFullscreenShortcut->setContext(Qt::WindowShortcut);
+    connect(keypadEnterFullscreenShortcut, &QShortcut::activated, this, &MainWindow::toggleFullscreen);
+
     m_fullscreenHideTimer.setSingleShot(true);
     m_fullscreenHideTimer.setInterval(2500);
     connect(&m_fullscreenHideTimer, &QTimer::timeout, this, [this] {
@@ -155,6 +163,7 @@ void MainWindow::buildUi() {
     m_videoWidget = new QWidget(root);
     m_videoWidget->setAttribute(Qt::WA_NativeWindow);
     m_videoWidget->setFocusPolicy(Qt::StrongFocus);
+    m_videoWidget->setMouseTracking(true);
     m_videoWidget->setAttribute(Qt::WA_AcceptTouchEvents);
     m_videoWidget->setStyleSheet(QStringLiteral("background:#000;"));
     m_videoWidget->setMinimumSize(320, 180);
