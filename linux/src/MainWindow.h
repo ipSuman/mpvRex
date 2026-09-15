@@ -114,7 +114,7 @@ private:
     QKeySequence m_loopAKey = QKeySequence(Qt::Key_A);
     QKeySequence m_loopBKey = QKeySequence(Qt::Key_B);
     QKeySequence m_loopClearKey = QKeySequence(Qt::Key_L);
-    QKeySequence m_zoomInKey = QKeySequence(Qt::Key_Plus);
+    QKeySequence m_zoomInKey = QKeySequence(Qt::SHIFT | Qt::Key_Equal);
     QKeySequence m_zoomOutKey = QKeySequence(Qt::Key_Minus);
     QKeySequence m_zoomResetKey = QKeySequence(Qt::Key_Z);
     QKeySequence m_frameBackKey = QKeySequence(Qt::Key_Comma);
