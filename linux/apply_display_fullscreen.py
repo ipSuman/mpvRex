@@ -50,6 +50,34 @@ if 'm_fullscreenHideTimer.setSingleShot' not in s:
         raise SystemExit('constructor anchor not found')
     s = s.replace(old, new, 1)
 
+if '#include <QShortcut>' not in s:
+    marker = '#include <QScrollArea>\n'
+    if marker not in s:
+        raise SystemExit('QShortcut include anchor not found')
+    s = s.replace(marker, marker + '#include <QShortcut>\n', 1)
+
+if 'auto* enterFullscreenShortcut' not in s:
+    marker = '    buildUi();\n\n    m_fullscreenHideTimer.setSingleShot(true);'
+    replacement = '''    buildUi();
+
+    auto* enterFullscreenShortcut = new QShortcut(QKeySequence(Qt::Key_Return), this);
+    enterFullscreenShortcut->setContext(Qt::WindowShortcut);
+    connect(enterFullscreenShortcut, &QShortcut::activated, this, &MainWindow::toggleFullscreen);
+    auto* keypadEnterFullscreenShortcut = new QShortcut(QKeySequence(Qt::Key_Enter), this);
+    keypadEnterFullscreenShortcut->setContext(Qt::WindowShortcut);
+    connect(keypadEnterFullscreenShortcut, &QShortcut::activated, this, &MainWindow::toggleFullscreen);
+
+    m_fullscreenHideTimer.setSingleShot(true);'''
+    if marker not in s:
+        raise SystemExit('shortcut constructor anchor not found')
+    s = s.replace(marker, replacement, 1)
+
+if 'setMouseTracking(true)' not in s:
+    marker = '    m_videoWidget->setFocusPolicy(Qt::StrongFocus);\n'
+    if marker not in s:
+        raise SystemExit('mouse tracking anchor not found')
+    s = s.replace(marker, marker + '    m_videoWidget->setMouseTracking(true);\n', 1)
+
 if 'setPropertyDouble("saturation", m_saturation);' not in s:
     old = '''    if (mpv_initialize(m_mpv) < 0) {
         showError(QStringLiteral("Could not initialize libmpv.")); return false;
