@@ -1,0 +1,103 @@
+name: Apply Linux final tweaks v3
+
+on:
+  push:
+    branches: [linux]
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build and runtime dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config qt6-base-dev libmpv-dev ffmpeg
+
+      - name: Apply source changes
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          h = Path("linux/src/MainWindow.h")
+          s = h.read_text()
+          s = s.replace("class QKeyEvent;\n", "class QKeyEvent;\nclass QProcess;\n")
+          s = s.replace("    void showTracksMenu();\n", "    void showTracksMenu();\n    void cutAbSelection();\n")
+          s = s.replace(
+              "    QPushButton* m_seekForwardButton = nullptr;\n",
+              "    QPushButton* m_seekForwardButton = nullptr;\n"
+              "    QPushButton* m_cutAbButton = nullptr;\n"
+              "    QProcess* m_cutProcess = nullptr;\n"
+              "    QString m_cutOutputPath;\n"
+          )
+          h.write_text(s)
+
+          cpp = Path("linux/src/MainWindow.cpp")
+          s = cpp.read_text()
+          s = s.replace("#include <QPushButton>\n", "#include <QPushButton>\n#include <QFile>\n#include <QProcess>\n#include <QStandardPaths>\n#include <QStyle>\n#include <QStyleOptionSlider>\n#include <QUrl>\n")
+
+          old = '''    m_seekSlider->setRange(0, 1000);\n    m_seekSlider->setTracking(false);\n    connect(m_seekSlider, &QSlider::sliderPressed, this, [this] { m_seeking = true; });'''
+          new = '''    m_seekSlider->setRange(0, 1000);\n    m_seekSlider->setTracking(false);\n    m_seekSlider->installEventFilter(this);\n    connect(m_seekSlider, &QSlider::sliderPressed, this, [this] { m_seeking = true; });'''
+          if old not in s: raise SystemExit("seek slider block not found")
+          s = s.replace(old, new)
+
+          old = '''    m_abLoopLabel->setToolTip(QStringLiteral("A: set loop start, B: set loop end, L: clear loop"));\n    row->addWidget(m_abLoopLabel);\n    m_hwButton = new QPushButton(QStringLiteral("SW"), m_controls);'''
+          new = '''    m_abLoopLabel->setToolTip(QStringLiteral("A: set loop start, B: set loop end, L: clear loop"));\n    row->addWidget(m_abLoopLabel);\n    m_cutAbButton = new QPushButton(QStringLiteral("Cut AB"), m_controls);\n    m_cutAbButton->setFixedWidth(62);\n    m_cutAbButton->setToolTip(QStringLiteral("Cut the current A-B selection with FFmpeg without re-encoding"));\n    connect(m_cutAbButton, &QPushButton::clicked, this, &MainWindow::cutAbSelection);\n    row->addWidget(m_cutAbButton);\n    m_hwButton = new QPushButton(QStringLiteral("SW"), m_controls);'''
+          if old not in s: raise SystemExit("A-B button block not found")
+          s = s.replace(old, new)
+
+          old = '''void MainWindow::toggleHardwareDecoding() { if (!m_mpv) return; const char* args[] = {"cycle-values", "hwdec", "auto", "no", nullptr}; command(args); }\nvoid MainWindow::updateHardwareButton() {'''
+          new = '''void MainWindow::toggleHardwareDecoding() { if (!m_mpv) return; const char* args[] = {"cycle-values", "hwdec", "auto", "no", nullptr}; command(args); }\n\nvoid MainWindow::cutAbSelection() {\n    if (!m_mpv) return;\n    if (m_abLoopStart < 0.0 || m_abLoopEnd <= m_abLoopStart) {\n        QMessageBox::information(this, QStringLiteral("Cut A-B"), QStringLiteral("Set both A and B points first."));\n        return;\n    }\n    if (m_cutProcess && m_cutProcess->state() != QProcess::NotRunning) {\n        QMessageBox::information(this, QStringLiteral("Cut A-B"), QStringLiteral("An A-B cut is already in progress."));\n        return;\n    }\n\n    const QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));\n    if (ffmpeg.isEmpty()) {\n        QMessageBox::warning(this, QStringLiteral("FFmpeg not found"),\n                             QStringLiteral("FFmpeg is required for A-B cutting. Install the ffmpeg package and try again."));\n        return;\n    }\n\n    QString inputPath = getPropertyString("path").trimmed();\n    const QUrl inputUrl(inputPath);\n    if (inputUrl.isLocalFile()) inputPath = inputUrl.toLocalFile();\n    const QFileInfo inputInfo(inputPath);\n    if (!inputInfo.isFile()) {\n        QMessageBox::warning(this, QStringLiteral("Cut A-B"), QStringLiteral("The current media is not a local file."));\n        return;\n    }\n\n    const double duration = m_abLoopEnd - m_abLoopStart;\n    const QString start = QString::number(m_abLoopStart, 'f', 6);\n    const QString length = QString::number(duration, 'f', 6);\n    const QString suffix = inputInfo.suffix();\n    const QString defaultName = inputInfo.dir().filePath(\n        inputInfo.completeBaseName() + QStringLiteral("_AB_cut") +\n        (suffix.isEmpty() ? QString() : QStringLiteral(".") + suffix));\n    const QString filter = suffix.isEmpty()\n        ? QStringLiteral("All files (*)")\n        : QStringLiteral("%1 (*.%1);;All files (*)").arg(suffix);\n    const QString outputPath = QFileDialog::getSaveFileName(this, QStringLiteral("Save A-B cut"), defaultName, filter);\n    if (outputPath.isEmpty()) return;\n\n    const QFileInfo outputInfo(outputPath);\n    if (outputInfo.absoluteFilePath() == inputInfo.absoluteFilePath()) {\n        QMessageBox::warning(this, QStringLiteral("Cut A-B"), QStringLiteral("The output file must be different from the input file."));\n        return;\n    }\n    if (outputInfo.exists()) {\n        const auto answer = QMessageBox::question(\n            this, QStringLiteral("Overwrite file?"),\n            QStringLiteral("%1 already exists. Replace it?").arg(outputInfo.fileName()),\n            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);\n        if (answer != QMessageBox::Yes) return;\n    }\n\n    m_cutOutputPath = outputPath;\n    m_cutProcess = new QProcess(this);\n    m_cutProcess->setProcessChannelMode(QProcess::SeparateChannels);\n    m_cutAbButton->setEnabled(false);\n\n    connect(m_cutProcess, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus exitStatus) {\n        const QString error = QString::fromLocal8Bit(m_cutProcess->readAllStandardError()).trimmed();\n        const QString output = m_cutOutputPath;\n        const bool success = exitStatus == QProcess::NormalExit && exitCode == 0 && QFileInfo::exists(output);\n        if (success) {\n            QMessageBox::information(\n                this, QStringLiteral("A-B cut complete"),\n                QStringLiteral("Saved:\\n%1\\n\\nStreams were copied without re-encoding. Because this is stream-copy cutting, the start may align to a nearby keyframe.").arg(output));\n        } else {\n            if (QFileInfo::exists(output)) QFile::remove(output);\n            const QString detail = error.isEmpty() ? QStringLiteral("FFmpeg exited with code %1.").arg(exitCode) : error;\n            QMessageBox::warning(this, QStringLiteral("A-B cut failed"), detail);\n        }\n        m_cutAbButton->setEnabled(true);\n        m_cutProcess->deleteLater();\n        m_cutProcess = nullptr;\n        m_cutOutputPath.clear();\n    });\n\n    const QStringList args = {\n        QStringLiteral("-hide_banner"),\n        QStringLiteral("-loglevel"), QStringLiteral("error"),\n        QStringLiteral("-ss"), start,\n        QStringLiteral("-i"), inputPath,\n        QStringLiteral("-t"), length,\n        QStringLiteral("-map"), QStringLiteral("0"),\n        QStringLiteral("-c"), QStringLiteral("copy"),\n        QStringLiteral("-avoid_negative_ts"), QStringLiteral("make_zero"),\n        QStringLiteral("-y"), outputPath\n    };\n    m_cutProcess->start(ffmpeg, args);\n}\n\nvoid MainWindow::updateHardwareButton() {'''
+          if old not in s: raise SystemExit("cut insertion point not found")
+          s = s.replace(old, new)
+
+          old = '''bool MainWindow::eventFilter(QObject* watched, QEvent* event) {\n    if (watched != m_videoWidget) return QMainWindow::eventFilter(watched, event);\n\n    if (event->type() == QEvent::MouseButtonDblClick) {'''
+          new = '''bool MainWindow::eventFilter(QObject* watched, QEvent* event) {\n    if (watched == m_seekSlider && event->type() == QEvent::MouseButtonPress) {\n        const auto* e = static_cast<QMouseEvent*>(event);\n        if (e->button() == Qt::LeftButton) {\n            QStyleOptionSlider opt;\n            opt.initFrom(m_seekSlider);\n            opt.orientation = Qt::Horizontal;\n            opt.minimum = m_seekSlider->minimum();\n            opt.maximum = m_seekSlider->maximum();\n            opt.sliderPosition = m_seekSlider->sliderPosition();\n            const QRect handle = m_seekSlider->style()->subControlRect(\n                QStyle::CC_Slider, &opt, QStyle::SC_SliderHandle, m_seekSlider);\n            if (!handle.contains(e->position().toPoint())) {\n                const QRect groove = m_seekSlider->style()->subControlRect(\n                    QStyle::CC_Slider, &opt, QStyle::SC_SliderGroove, m_seekSlider);\n                const int span = std::max(1, groove.width());\n                const int x = static_cast<int>(e->position().x());\n                const int position = std::clamp(x - groove.left(), 0, span);\n                const int value = QStyle::sliderValueFromPosition(\n                    opt.minimum, opt.maximum, position, span, opt.upsideDown);\n                m_seekSlider->setValue(value);\n                m_seeking = false;\n                seekTo(value);\n                return true;\n            }\n        }\n        return QMainWindow::eventFilter(watched, event);\n    }\n\n    if (watched != m_videoWidget) return QMainWindow::eventFilter(watched, event);\n\n    if (event->type() == QEvent::MouseButtonDblClick) {'''
+          if old not in s: raise SystemExit("event filter insertion point not found")
+          s = s.replace(old, new)
+
+          cpp.write_text(s)
+
+          readme = Path("linux/README.md")
+          s = readme.read_text()
+          s = s.replace(
+              "- Video information dialog with file, codec, resolution, audio, subtitle and track details\n",
+              "- Video information dialog with file, codec, resolution, audio, subtitle and track details\n- A-B stream-copy cutting through FFmpeg, preserving all mapped streams without re-encoding\n"
+          )
+          s = s.replace(
+              "sudo apt install build-essential cmake pkg-config qt6-base-dev libmpv-dev",
+              "sudo apt install build-essential cmake pkg-config qt6-base-dev libmpv-dev ffmpeg"
+          )
+          s = s.replace(
+              "- Click the **−10s** and **+10s** buttons to seek exactly 10 seconds.\n",
+              "- Click the **−10s** and **+10s** buttons to seek exactly 10 seconds.\n- Click anywhere on the seek bar to jump directly to that position.\n"
+          )
+          s = s.replace(
+              "## Precision playback\n",
+              "## A-B cutting\n\n- Set A and B with the configured A/B shortcuts, then click **Cut AB**.\n- The cut uses FFmpeg stream copy (`-c copy`) and maps all streams, so video, every audio track and every subtitle track are copied without re-encoding.\n- FFmpeg must be installed and the output container must support the copied streams.\n- Stream-copy cutting is keyframe-limited, so the beginning can be slightly before the requested A point. Exact frame-accurate cutting requires re-encoding.\n\n## Precision playback\n"
+          )
+          readme.write_text(s)
+
+          workflow = Path(".github/workflows/apply-linux-final-tweaks-v3.yml")
+          workflow.unlink()
+          PY
+
+      - name: Build and verify
+        run: |
+          git diff --check
+          cmake -S linux -B build-linux -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-linux --parallel
+          ffmpeg -version | head -n 1
+
+      - name: Commit final tweaks
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add linux/src/MainWindow.h linux/src/MainWindow.cpp linux/README.md .github/workflows/apply-linux-final-tweaks-v3.yml
+          git commit -m "Fix seek bar and add A-B stream-copy cutting"
+          git push
