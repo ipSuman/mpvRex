@@ -1,0 +1,46 @@
+name: Fix Linux button sizing
+
+on:
+  push:
+    branches: [linux]
+
+jobs:
+  fix:
+    if: github.event.head_commit.message != 'Fix Cut AB and Save Log button sizing'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix button sizing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('linux/src/MainWindow.cpp')
+          s = p.read_text()
+          s = s.replace('m_cutAbButton->setFixedWidth(62);', 'm_cutAbButton->setMinimumWidth(76);\n    m_cutAbButton->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);')
+          s = s.replace('m_logButton->setFixedWidth(72);', 'm_logButton->setMinimumWidth(84);\n    m_logButton->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);')
+          p.write_text(s)
+          PY
+          git diff --check
+      - name: Build
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake pkg-config qt6-base-dev libmpv-dev
+          cmake -S linux -B build-linux -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-linux --parallel
+      - name: Commit fix
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add linux/src/MainWindow.cpp
+          git commit -m "Fix Cut AB and Save Log button sizing"
+          git push
+      - name: Remove temporary workflow
+        if: always()
+        run: |
+          git fetch origin linux
+          git checkout linux
+          git rm -f .github/workflows/fix-button-size.yml || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Remove temporary button size workflow" || true
+          git push || true
