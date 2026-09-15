@@ -17,6 +17,7 @@ class QDropEvent;
 class QEvent;
 class QDockWidget;
 class QKeyEvent;
+class QProcess;
 
 struct mpv_handle;
 
@@ -53,6 +54,7 @@ private slots:
     void playPrevious();
     void playNext();
     void showTracksMenu();
+    void cutAbSelection();
 
 private:
     bool initializeMpv();
@@ -99,6 +101,9 @@ private:
     QPushButton* m_nextButton = nullptr;
     QPushButton* m_seekBackButton = nullptr;
     QPushButton* m_seekForwardButton = nullptr;
+    QPushButton* m_cutAbButton = nullptr;
+    QProcess* m_cutProcess = nullptr;
+    QString m_cutOutputPath;
     bool m_seeking = false;
     bool m_panningVideo = false;
     QPointF m_panStart;

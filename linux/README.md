@@ -14,6 +14,7 @@ This is the first foundation milestone:
 - CMake-based build
 - HW/SW decoding toggle with live status
 - Video information dialog with file, codec, resolution, audio, subtitle and track details
+- A-B stream-copy cutting through FFmpeg, preserving all mapped streams without re-encoding
 
 The Linux player is intentionally being built alongside the Android project rather than attempting to port the Android UI directly.
 
@@ -21,7 +22,7 @@ The Linux player is intentionally being built alongside the Android project rath
 
 ```bash
 sudo apt update
-sudo apt install build-essential cmake pkg-config qt6-base-dev libmpv-dev
+sudo apt install build-essential cmake pkg-config qt6-base-dev libmpv-dev ffmpeg
 
 cmake -S linux -B linux/build
 cmake --build linux/build -j$(nproc)
@@ -56,11 +57,19 @@ On the video surface:
 - Double-click the left or right third to seek backward or forward 10 seconds.
 - Double-click the center to pause or resume.
 - Click the **−10s** and **+10s** buttons to seek exactly 10 seconds.
+- Click anywhere on the seek bar to jump directly to that position.
 - Scroll to seek by the configurable seek duration.
 - Hold `Ctrl` while scrolling to adjust volume.
 - Hold `Alt` while scrolling to zoom the video.
 - Drag with the middle mouse button to pan a zoomed video.
 - Press `+` or `-` to zoom, and `Z` to reset zoom and pan.
+
+## A-B cutting
+
+- Set A and B with the configured A/B shortcuts, then click **Cut AB**.
+- The cut uses FFmpeg stream copy (`-c copy`) and maps all streams, so video, every audio track and every subtitle track are copied without re-encoding.
+- FFmpeg must be installed and the output container must support the copied streams.
+- Stream-copy cutting is keyframe-limited, so the beginning can be slightly before the requested A point. Exact frame-accurate cutting requires re-encoding.
 
 ## Precision playback
 

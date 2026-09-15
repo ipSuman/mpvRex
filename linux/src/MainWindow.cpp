@@ -24,6 +24,12 @@
 #include <QMimeData>
 #include <QMouseEvent>
 #include <QPushButton>
+#include <QFile>
+#include <QProcess>
+#include <QStandardPaths>
+#include <QStyle>
+#include <QStyleOptionSlider>
+#include <QUrl>
 #include <QSettings>
 #include <QScrollArea>
 #include <QSlider>
@@ -161,6 +167,7 @@ void MainWindow::buildUi() {
     m_seekSlider = new QSlider(Qt::Horizontal, m_controls);
     m_seekSlider->setRange(0, 1000);
     m_seekSlider->setTracking(false);
+    m_seekSlider->installEventFilter(this);
     connect(m_seekSlider, &QSlider::sliderPressed, this, [this] { m_seeking = true; });
     connect(m_seekSlider, &QSlider::sliderReleased, this, [this] {
         m_seeking = false;
@@ -207,6 +214,11 @@ void MainWindow::buildUi() {
     m_abLoopLabel = new QLabel(QStringLiteral("A-B: Off"), m_controls);
     m_abLoopLabel->setToolTip(QStringLiteral("A: set loop start, B: set loop end, L: clear loop"));
     row->addWidget(m_abLoopLabel);
+    m_cutAbButton = new QPushButton(QStringLiteral("Cut AB"), m_controls);
+    m_cutAbButton->setFixedWidth(62);
+    m_cutAbButton->setToolTip(QStringLiteral("Cut the current A-B selection with FFmpeg without re-encoding"));
+    connect(m_cutAbButton, &QPushButton::clicked, this, &MainWindow::cutAbSelection);
+    row->addWidget(m_cutAbButton);
     m_hwButton = new QPushButton(QStringLiteral("SW"), m_controls);
     m_hwButton->setFixedWidth(48);
     m_hwButton->setToolTip(QStringLiteral("Software decoding. Click to enable hardware decoding when supported."));
@@ -543,6 +555,98 @@ void MainWindow::clearAbLoop() { static char noLoop[] = "no"; char* value = noLo
 void MainWindow::updateAbLoopLabel() { if (!m_abLoopLabel) return; if (m_abLoopStart < 0.0) m_abLoopLabel->setText(QStringLiteral("A-B: Off")); else if (m_abLoopEnd < 0.0) m_abLoopLabel->setText(QStringLiteral("A-B: %1 — …").arg(formatTime(m_abLoopStart))); else m_abLoopLabel->setText(QStringLiteral("A-B: %1 — %2").arg(formatTime(m_abLoopStart), formatTime(m_abLoopEnd))); }
 void MainWindow::stepFrame(bool forward) { const char* args[] = {forward ? "frame-step" : "frame-back-step", nullptr}; command(args); }
 void MainWindow::toggleHardwareDecoding() { if (!m_mpv) return; const char* args[] = {"cycle-values", "hwdec", "auto", "no", nullptr}; command(args); }
+
+void MainWindow::cutAbSelection() {
+    if (!m_mpv) return;
+    if (m_abLoopStart < 0.0 || m_abLoopEnd <= m_abLoopStart) {
+        QMessageBox::information(this, QStringLiteral("Cut A-B"), QStringLiteral("Set both A and B points first."));
+        return;
+    }
+    if (m_cutProcess && m_cutProcess->state() != QProcess::NotRunning) {
+        QMessageBox::information(this, QStringLiteral("Cut A-B"), QStringLiteral("An A-B cut is already in progress."));
+        return;
+    }
+
+    const QString ffmpeg = QStandardPaths::findExecutable(QStringLiteral("ffmpeg"));
+    if (ffmpeg.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("FFmpeg not found"),
+                             QStringLiteral("FFmpeg is required for A-B cutting. Install the ffmpeg package and try again."));
+        return;
+    }
+
+    QString inputPath = getPropertyString("path").trimmed();
+    const QUrl inputUrl(inputPath);
+    if (inputUrl.isLocalFile()) inputPath = inputUrl.toLocalFile();
+    const QFileInfo inputInfo(inputPath);
+    if (!inputInfo.isFile()) {
+        QMessageBox::warning(this, QStringLiteral("Cut A-B"), QStringLiteral("The current media is not a local file."));
+        return;
+    }
+
+    const double duration = m_abLoopEnd - m_abLoopStart;
+    const QString start = QString::number(m_abLoopStart, 'f', 6);
+    const QString length = QString::number(duration, 'f', 6);
+    const QString suffix = inputInfo.suffix();
+    const QString defaultName = inputInfo.dir().filePath(
+        inputInfo.completeBaseName() + QStringLiteral("_AB_cut") +
+        (suffix.isEmpty() ? QString() : QStringLiteral(".") + suffix));
+    const QString filter = suffix.isEmpty()
+        ? QStringLiteral("All files (*)")
+        : QStringLiteral("%1 (*.%1);;All files (*)").arg(suffix);
+    const QString outputPath = QFileDialog::getSaveFileName(this, QStringLiteral("Save A-B cut"), defaultName, filter);
+    if (outputPath.isEmpty()) return;
+
+    const QFileInfo outputInfo(outputPath);
+    if (outputInfo.absoluteFilePath() == inputInfo.absoluteFilePath()) {
+        QMessageBox::warning(this, QStringLiteral("Cut A-B"), QStringLiteral("The output file must be different from the input file."));
+        return;
+    }
+    if (outputInfo.exists()) {
+        const auto answer = QMessageBox::question(
+            this, QStringLiteral("Overwrite file?"),
+            QStringLiteral("%1 already exists. Replace it?").arg(outputInfo.fileName()),
+            QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+        if (answer != QMessageBox::Yes) return;
+    }
+
+    m_cutOutputPath = outputPath;
+    m_cutProcess = new QProcess(this);
+    m_cutProcess->setProcessChannelMode(QProcess::SeparateChannels);
+    m_cutAbButton->setEnabled(false);
+
+    connect(m_cutProcess, &QProcess::finished, this, [this](int exitCode, QProcess::ExitStatus exitStatus) {
+        const QString error = QString::fromLocal8Bit(m_cutProcess->readAllStandardError()).trimmed();
+        const QString output = m_cutOutputPath;
+        const bool success = exitStatus == QProcess::NormalExit && exitCode == 0 && QFileInfo::exists(output);
+        if (success) {
+            QMessageBox::information(
+                this, QStringLiteral("A-B cut complete"),
+                QStringLiteral("Saved:\n%1\n\nStreams were copied without re-encoding. Because this is stream-copy cutting, the start may align to a nearby keyframe.").arg(output));
+        } else {
+            if (QFileInfo::exists(output)) QFile::remove(output);
+            const QString detail = error.isEmpty() ? QStringLiteral("FFmpeg exited with code %1.").arg(exitCode) : error;
+            QMessageBox::warning(this, QStringLiteral("A-B cut failed"), detail);
+        }
+        m_cutAbButton->setEnabled(true);
+        m_cutProcess->deleteLater();
+        m_cutProcess = nullptr;
+        m_cutOutputPath.clear();
+    });
+
+    const QStringList args = {
+        QStringLiteral("-hide_banner"),
+        QStringLiteral("-loglevel"), QStringLiteral("error"),
+        QStringLiteral("-ss"), start,
+        QStringLiteral("-i"), inputPath,
+        QStringLiteral("-t"), length,
+        QStringLiteral("-map"), QStringLiteral("0"),
+        QStringLiteral("-c"), QStringLiteral("copy"),
+        QStringLiteral("-avoid_negative_ts"), QStringLiteral("make_zero"),
+        QStringLiteral("-y"), outputPath
+    };
+    m_cutProcess->start(ffmpeg, args);
+}
+
 void MainWindow::updateHardwareButton() {
     if (!m_hwButton || !m_mpv) return;
     const QString current = getPropertyString("hwdec-current").trimmed().toLower();
@@ -699,6 +803,34 @@ void MainWindow::keyPressEvent(QKeyEvent* event) {
 }
 
 bool MainWindow::eventFilter(QObject* watched, QEvent* event) {
+    if (watched == m_seekSlider && event->type() == QEvent::MouseButtonPress) {
+        const auto* e = static_cast<QMouseEvent*>(event);
+        if (e->button() == Qt::LeftButton) {
+            QStyleOptionSlider opt;
+            opt.initFrom(m_seekSlider);
+            opt.orientation = Qt::Horizontal;
+            opt.minimum = m_seekSlider->minimum();
+            opt.maximum = m_seekSlider->maximum();
+            opt.sliderPosition = m_seekSlider->sliderPosition();
+            const QRect handle = m_seekSlider->style()->subControlRect(
+                QStyle::CC_Slider, &opt, QStyle::SC_SliderHandle, m_seekSlider);
+            if (!handle.contains(e->position().toPoint())) {
+                const QRect groove = m_seekSlider->style()->subControlRect(
+                    QStyle::CC_Slider, &opt, QStyle::SC_SliderGroove, m_seekSlider);
+                const int span = std::max(1, groove.width());
+                const int x = static_cast<int>(e->position().x());
+                const int position = std::clamp(x - groove.left(), 0, span);
+                const int value = QStyle::sliderValueFromPosition(
+                    opt.minimum, opt.maximum, position, span, opt.upsideDown);
+                m_seekSlider->setValue(value);
+                m_seeking = false;
+                seekTo(value);
+                return true;
+            }
+        }
+        return QMainWindow::eventFilter(watched, event);
+    }
+
     if (watched != m_videoWidget) return QMainWindow::eventFilter(watched, event);
 
     if (event->type() == QEvent::MouseButtonDblClick) {
