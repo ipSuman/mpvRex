@@ -17,6 +17,7 @@ h.write_text(s)
 cpp = Path("linux/src/MainWindow.cpp")
 s = cpp.read_text()
 for inc, anchor in [
+    ("#include <QCoreApplication>\n", "#include <QCloseEvent>\n"),
     ("#include <QDateTime>\n", "#include <QDir>\n"),
     ("#include <QSysInfo>\n", "#include <QStandardPaths>\n"),
     ("#include <QTextStream>\n", "#include <QStyle>\n"),
@@ -40,15 +41,12 @@ if "void MainWindow::saveLogReport()" not in s:
     method = r'''void MainWindow::saveLogReport() {
     const QString timestamp = QDateTime::currentDateTime().toString(QStringLiteral("yyyyMMdd_HHmmss"));
     const QString defaultName = QDir::home().filePath(QStringLiteral("REX_Player_Log_%1.txt").arg(timestamp));
-    const QString path = QFileDialog::getSaveFileName(
-        this, QStringLiteral("Save REX Player log report"), defaultName,
-        QStringLiteral("Text files (*.txt);;All files (*)"));
+    const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("Save REX Player log report"), defaultName, QStringLiteral("Text files (*.txt);;All files (*)"));
     if (path.isEmpty()) return;
 
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
-        QMessageBox::warning(this, QStringLiteral("Save Log"),
-                             QStringLiteral("Could not write the log report:\n%1").arg(file.errorString()));
+        QMessageBox::warning(this, QStringLiteral("Save Log"), QStringLiteral("Could not write the log report:\n%1").arg(file.errorString()));
         return;
     }
 
@@ -77,8 +75,7 @@ if "void MainWindow::saveLogReport()" not in s:
         if (std::isfinite(value)) out << label << ": " << QString::number(value, 'g', 12) << "\n";
     };
 
-    out << "Playback / Media\n";
-    out << "----------------\n";
+    out << "Playback / Media\n----------------\n";
     writeString("path", "Path");
     writeString("filename", "Filename");
     writeString("media-title", "Media title");
@@ -116,18 +113,17 @@ if "void MainWindow::saveLogReport()" not in s:
 
     out << "\nTracks\n------\n";
     mpv_node tracks{};
-    if (m_mpv && mpv_get_property(m_mpv, "track-list", MPV_FORMAT_NODE, &tracks) >= 0 &&
-        tracks.format == MPV_FORMAT_NODE_ARRAY && tracks.u.list) {
+    if (m_mpv && mpv_get_property(m_mpv, "track-list", MPV_FORMAT_NODE, &tracks) >= 0 && tracks.format == MPV_FORMAT_NODE_ARRAY && tracks.u.list) {
         for (int i = 0; i < tracks.u.list->num; ++i) {
             const mpv_node* track = &tracks.u.list->values[i];
-            out << "Track " << (i + 1);
-            out << ": type=" << nodeString(mapValue(track->u.list, "type"));
-            out << ", id=" << nodeInt(mapValue(track->u.list, "id"));
-            out << ", lang=" << nodeString(mapValue(track->u.list, "lang"));
-            out << ", title=" << nodeString(mapValue(track->u.list, "title"));
-            out << ", codec=" << nodeString(mapValue(track->u.list, "codec"));
-            out << ", external=" << nodeString(mapValue(track->u.list, "external-filename"));
-            out << ", selected=" << (nodeFlag(mapValue(track->u.list, "selected")) ? "yes" : "no") << "\n";
+            out << "Track " << (i + 1)
+                << ": type=" << nodeString(mapValue(track->u.list, "type"))
+                << ", id=" << nodeInt(mapValue(track->u.list, "id"))
+                << ", lang=" << nodeString(mapValue(track->u.list, "lang"))
+                << ", title=" << nodeString(mapValue(track->u.list, "title"))
+                << ", codec=" << nodeString(mapValue(track->u.list, "codec"))
+                << ", external=" << nodeString(mapValue(track->u.list, "external-filename"))
+                << ", selected=" << (nodeFlag(mapValue(track->u.list, "selected")) ? "yes" : "no") << "\n";
         }
         mpv_free_node_contents(&tracks);
     } else {
@@ -165,8 +161,7 @@ if "void MainWindow::saveLogReport()" not in s:
 
     out << "\nEnd of report\n";
     file.close();
-    QMessageBox::information(this, QStringLiteral("Log saved"),
-                             QStringLiteral("Diagnostic report saved to:\n%1").arg(path));
+    QMessageBox::information(this, QStringLiteral("Log saved"), QStringLiteral("Diagnostic report saved to:\n%1").arg(path));
 }
 
 '''
