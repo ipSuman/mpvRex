@@ -523,7 +523,8 @@ bool MainWindow::initializeMpv() {
     if (mpv_set_option_string(m_mpv, "wid", wid.constData()) < 0 ||
         mpv_set_option_string(m_mpv, "terminal", "no") < 0 ||
         mpv_set_option_string(m_mpv, "osc", "no") < 0 ||
-        mpv_set_option_string(m_mpv, "keep-open", "yes") < 0 ||
+        mpv_set_option_string(m_mpv, "idle", "yes") < 0 ||
+        mpv_set_option_string(m_mpv, "keep-open", "no") < 0 ||
         mpv_set_option_string(m_mpv, "hwdec", "auto") < 0 ||
         mpv_set_option_string(m_mpv, "input-vo-keyboard", "no") < 0 ||
         mpv_set_option_string(m_mpv, "input-cursor-passthrough", "yes") < 0) {
