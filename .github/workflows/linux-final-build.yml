@@ -1,8 +1,8 @@
-name: REX Player Linux Final
+name: REX Player Linux New Features
 
 on:
   push:
-    branches: [linux]
+    branches: [New-features]
   workflow_dispatch:
 
 permissions:
@@ -15,17 +15,82 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y build-essential cmake pkg-config qt6-base-dev libmpv-dev
 
-      - name: Apply Save Log update
-        run: python3 linux/apply_log_update.py
+      - name: Apply seek duration options
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
 
-      - name: Apply autoplay v2 fix
-        run: python3 linux/fix_autoplay_v2.py
+          h = Path("linux/src/MainWindow.h")
+          s = h.read_text()
+          old = "    int m_seekDurationMinutes = 1;"
+          new = "    int m_seekDurationSeconds = 60;"
+          if old not in s:
+              raise SystemExit("seek duration member not found")
+          h.write_text(s.replace(old, new, 1))
+
+          cpp = Path("linux/src/MainWindow.cpp")
+          s = cpp.read_text()
+
+          replacements = [
+              (
+                  "    m_seekDurationMinutes = std::clamp(settings.value(QStringLiteral(\"controls/seekDurationMinutes\"), m_seekDurationMinutes).toInt(), 1, 120);",
+                  "    const int legacyMinutes = std::clamp(settings.value(QStringLiteral(\"controls/seekDurationMinutes\"), 1).toInt(), 1, 120);\n    m_seekDurationSeconds = std::clamp(settings.value(QStringLiteral(\"controls/seekDurationSeconds\"), legacyMinutes * 60).toInt(), 5, 7200);"
+              ),
+              (
+                  "void MainWindow::seekBackward() { const QByteArray seconds = QByteArray::number(-m_seekDurationMinutes * 60); const char* args[] = {\"seek\", seconds.constData(), \"relative\", \"exact\", nullptr}; command(args); }",
+                  "void MainWindow::seekBackward() { const QByteArray seconds = QByteArray::number(-m_seekDurationSeconds); const char* args[] = {\"seek\", seconds.constData(), \"relative\", \"exact\", nullptr}; command(args); }"
+              ),
+              (
+                  "void MainWindow::seekForward() { const QByteArray seconds = QByteArray::number(m_seekDurationMinutes * 60); const char* args[] = {\"seek\", seconds.constData(), \"relative\", \"exact\", nullptr}; command(args); }",
+                  "void MainWindow::seekForward() { const QByteArray seconds = QByteArray::number(m_seekDurationSeconds); const char* args[] = {\"seek\", seconds.constData(), \"relative\", \"exact\", nullptr}; command(args); }"
+              ),
+              (
+                  "    auto* seekDuration = new QSpinBox(&dialog);\n    seekDuration->setRange(1, 120);\n    seekDuration->setSingleStep(1);\n    seekDuration->setSuffix(QStringLiteral(\" min\"));\n    seekDuration->setValue(m_seekDurationMinutes);\n    form->addRow(QStringLiteral(\"Seek duration\"), seekDuration);",
+                  "    auto* seekDuration = new QComboBox(&dialog);\n    for (int seconds : {5, 10, 30})\n        seekDuration->addItem(QStringLiteral(\"%1 seconds\").arg(seconds), seconds);\n    for (int minutes = 1; minutes <= 120; ++minutes)\n        seekDuration->addItem(QStringLiteral(\"%1 min\").arg(minutes), minutes * 60);\n    selectData(seekDuration, m_seekDurationSeconds);\n    form->addRow(QStringLiteral(\"Seek duration\"), seekDuration);"
+              ),
+              (
+                  "        seekDuration->setValue(1);",
+                  "        selectData(seekDuration, 60);"
+              ),
+              (
+                  "        m_seekDurationMinutes = seekDuration->value();",
+                  "        m_seekDurationSeconds = seekDuration->currentData().toInt();"
+              ),
+              (
+                  "        settings.setValue(QStringLiteral(\"controls/seekDurationMinutes\"), m_seekDurationMinutes);",
+                  "        settings.setValue(QStringLiteral(\"controls/seekDurationSeconds\"), m_seekDurationSeconds);"
+              ),
+              (
+                  '    out << "Seek duration (minutes): " << m_seekDurationMinutes << "\\n";',
+                  '    out << "Seek duration (seconds): " << m_seekDurationSeconds << "\\n";'
+              ),
+              (
+                  'The same wheel gesture is assigned to more than one action. Please choose different gestures.',
+                  'The same wheel gesture is assigned to more than one action. Please choose different gestures.'
+              ),
+              (
+                  'Seek duration applies to the arrow keys, wheel seek and double-click seek zones. The −10s and +10s buttons always seek exactly 10 seconds. Changes are saved for the next launch. Clear a shortcut to disable it.',
+                  'Seek duration applies to the arrow keys, wheel seek and double-click seek zones. Choose 5, 10 or 30 seconds, or a value from 1 to 120 minutes. The −10s and +10s buttons always seek exactly 10 seconds. Changes are saved for the next launch. Clear a shortcut to disable it.'
+              )
+          ]
+
+          for old, new in replacements:
+              if old == new:
+                  continue
+              if old not in s:
+                  raise SystemExit(f"expected text not found: {old[:80]}")
+              s = s.replace(old, new, 1)
+
+          cpp.write_text(s)
+          PY
 
       - name: Configure
         run: cmake -S linux -B build-linux -DCMAKE_BUILD_TYPE=Release
@@ -46,12 +111,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -f linux/fix_autoplay_v2.py .github/workflows/fix-autoplay-v2.yml linux/autoplay-v2-trigger.txt
-          git add linux/src/MainWindow.h linux/src/MainWindow.cpp linux/fix_autoplay_v2.py .github/workflows/fix-autoplay-v2.yml linux/autoplay-v2-trigger.txt
+          git add linux/src/MainWindow.h linux/src/MainWindow.cpp
           if git diff --cached --quiet; then
             echo "No source changes to commit."
           else
-            git commit -m "Fix Linux playlist autoplay v2"
+            git commit -m "Add second-based seek duration options [skip ci]"
             git push
           fi
 
