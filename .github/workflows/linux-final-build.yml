@@ -22,7 +22,7 @@ jobs:
           sudo apt-get install -y build-essential cmake pkg-config qt6-base-dev libmpv-dev
 
       - name: Apply Save Log update
-        run: python3 linux/apply_log_update.py
+        run: python3 linux/restore_save_log.py
 
       - name: Apply autoplay v2 fix
         run: python3 linux/fix_autoplay_v2.py
@@ -49,8 +49,8 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -f linux/fix_autoplay_v2.py linux/fix_double_tap_seek.py .github/workflows/fix-autoplay-v2.yml linux/autoplay-v2-trigger.txt
-          git add linux/src/MainWindow.h linux/src/MainWindow.cpp linux/fix_autoplay_v2.py linux/fix_double_tap_seek.py .github/workflows/fix-autoplay-v2.yml linux/autoplay-v2-trigger.txt
+          rm -f linux/apply_log_update.py linux/restore_save_log.py linux/fix_autoplay_v2.py linux/fix_double_tap_seek.py .github/workflows/fix-autoplay-v2.yml linux/autoplay-v2-trigger.txt
+          git add linux/src/MainWindow.h linux/src/MainWindow.cpp linux/apply_log_update.py linux/restore_save_log.py linux/fix_autoplay_v2.py linux/fix_double_tap_seek.py .github/workflows/fix-autoplay-v2.yml linux/autoplay-v2-trigger.txt
           if git diff --cached --quiet; then
             echo "No source changes to commit."
           else
