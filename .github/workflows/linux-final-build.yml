@@ -23,12 +23,28 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake pkg-config qt6-base-dev libmpv-dev
 
-      - name: Restore verified Linux source
+      - name: Restore verified Linux source and apply double-tap seek
         run: |
           git checkout 6c9bbcaf79229b68c6e6afe56c7a9ed9a9923c06 -- linux/src/MainWindow.h linux/src/MainWindow.cpp
-
-      - name: Apply double-tap seek update
-        run: python3 linux/fix_double_tap_seek.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("linux/src/MainWindow.cpp")
+          s = p.read_text()
+          old = '''            if (x < width / 3.0) seekBackward();
+            else if (x > width * 2.0 / 3.0) seekForward();
+            else togglePause();'''
+          new = '''            if (x < width / 3.0) {
+                const char* args[] = {"seek", "-10", "relative", "exact", nullptr};
+                command(args);
+            } else if (x > width * 2.0 / 3.0) {
+                const char* args[] = {"seek", "10", "relative", "exact", nullptr};
+                command(args);
+            } else {
+                togglePause();
+            }'''
+          assert old in s, "double-tap handler not found"
+          p.write_text(s.replace(old, new, 1))
+          PY
 
       - name: Configure
         run: cmake -S linux -B build-linux -DCMAKE_BUILD_TYPE=Release
@@ -49,12 +65,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          rm -f linux/apply_log_update.py linux/restore_save_log.py linux/fix_autoplay_v2.py linux/fix_double_tap_seek.py .github/workflows/fix-autoplay-v2.yml linux/autoplay-v2-trigger.txt
-          git add linux/src/MainWindow.h linux/src/MainWindow.cpp linux/apply_log_update.py linux/restore_save_log.py linux/fix_autoplay_v2.py linux/fix_double_tap_seek.py .github/workflows/fix-autoplay-v2.yml linux/autoplay-v2-trigger.txt
+          git add linux/src/MainWindow.h linux/src/MainWindow.cpp
           if git diff --cached --quiet; then
             echo "No source changes to commit."
           else
-            git commit -m "Set double-tap seek to fixed 10 seconds"
+            git commit -m "Set double-tap seek to fixed 10 seconds [skip ci]"
             git push
           fi
 
