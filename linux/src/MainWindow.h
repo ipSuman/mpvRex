@@ -126,7 +126,7 @@ private:
     Qt::MouseButton m_panButton = Qt::MiddleButton;
     Qt::MouseButton m_doubleClickButton = Qt::LeftButton;
     bool m_doubleClickZones = true;
-    int m_seekDurationMinutes = 1;
+    int m_seekDurationSeconds = 60;
     QKeySequence m_seekBackwardKey = QKeySequence(Qt::Key_Left);
     QKeySequence m_seekForwardKey = QKeySequence(Qt::Key_Right);
     QKeySequence m_loopAKey = QKeySequence(Qt::Key_A);

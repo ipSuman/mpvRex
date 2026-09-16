@@ -340,7 +340,8 @@ void MainWindow::loadControlSettings() {
     m_volumeWheelMode = settings.value(QStringLiteral("controls/volumeWheel"), m_volumeWheelMode).toString();
     m_panButton = static_cast<Qt::MouseButton>(settings.value(QStringLiteral("controls/panButton"), static_cast<int>(m_panButton)).toInt());
     m_doubleClickButton = static_cast<Qt::MouseButton>(settings.value(QStringLiteral("controls/doubleClickButton"), static_cast<int>(m_doubleClickButton)).toInt());
-    m_seekDurationMinutes = std::clamp(settings.value(QStringLiteral("controls/seekDurationMinutes"), m_seekDurationMinutes).toInt(), 1, 120);
+    const int legacyMinutes = std::clamp(settings.value(QStringLiteral("controls/seekDurationMinutes"), 1).toInt(), 1, 120);
+    m_seekDurationSeconds = std::clamp(settings.value(QStringLiteral("controls/seekDurationSeconds"), legacyMinutes * 60).toInt(), 5, 7200);
     m_seekBackwardKey = QKeySequence(settings.value(QStringLiteral("controls/seekBackward"), m_seekBackwardKey.toString()).toString());
     m_seekForwardKey = QKeySequence(settings.value(QStringLiteral("controls/seekForward"), m_seekForwardKey.toString()).toString());
     m_loopAKey = QKeySequence(settings.value(QStringLiteral("controls/loopA"), m_loopAKey.toString()).toString());
@@ -367,11 +368,12 @@ void MainWindow::showControlsDialog() {
     auto* form = new QFormLayout();
     form->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
 
-    auto* seekDuration = new QSpinBox(&dialog);
-    seekDuration->setRange(1, 120);
-    seekDuration->setSingleStep(1);
-    seekDuration->setSuffix(QStringLiteral(" min"));
-    seekDuration->setValue(m_seekDurationMinutes);
+    auto* seekDuration = new QComboBox(&dialog);
+    for (int seconds : {5, 10, 30})
+        seekDuration->addItem(QStringLiteral("%1 seconds").arg(seconds), seconds);
+    for (int minutes = 1; minutes <= 120; ++minutes)
+        seekDuration->addItem(QStringLiteral("%1 min").arg(minutes), minutes * 60);
+    selectData(seekDuration, m_seekDurationSeconds);
     form->addRow(QStringLiteral("Seek duration"), seekDuration);
 
     auto* seekWheel = new QComboBox(&dialog);
@@ -434,7 +436,7 @@ void MainWindow::showControlsDialog() {
     keyForm->addRow(QStringLiteral(". → Next frame"), frameForward);
     mainLayout->addLayout(keyForm);
 
-    auto* note = new QLabel(QStringLiteral("Seek duration applies to the arrow keys, wheel seek and double-click seek zones. The −10s and +10s buttons always seek exactly 10 seconds. Changes are saved for the next launch. Clear a shortcut to disable it."), &dialog);
+    auto* note = new QLabel(QStringLiteral("Seek duration applies to the arrow keys, wheel seek and double-click seek zones. Choose 5, 10 or 30 seconds, or a value from 1 to 120 minutes. The −10s and +10s buttons always seek exactly 10 seconds. Changes are saved for the next launch. Clear a shortcut to disable it."), &dialog);
     note->setWordWrap(true);
     mainLayout->addWidget(note);
 
@@ -443,7 +445,7 @@ void MainWindow::showControlsDialog() {
     mainLayout->addWidget(buttons);
 
     connect(reset, &QPushButton::clicked, &dialog, [&] {
-        seekDuration->setValue(1);
+        selectData(seekDuration, 60);
         selectData(seekWheel, QStringLiteral("wheel"));
         selectData(zoomWheel, QStringLiteral("alt-wheel"));
         selectData(volumeWheel, QStringLiteral("ctrl-wheel"));
@@ -472,7 +474,7 @@ void MainWindow::showControlsDialog() {
                 }
             }
         }
-        m_seekDurationMinutes = seekDuration->value();
+        m_seekDurationSeconds = seekDuration->currentData().toInt();
         m_seekWheelMode = seekWheel->currentData().toString();
         m_zoomWheelMode = zoomWheel->currentData().toString();
         m_volumeWheelMode = volumeWheel->currentData().toString();
@@ -490,7 +492,7 @@ void MainWindow::showControlsDialog() {
         m_frameForwardKey = frameForward->keySequence();
 
         QSettings settings(QStringLiteral("REX Player"), QStringLiteral("REX Player"));
-        settings.setValue(QStringLiteral("controls/seekDurationMinutes"), m_seekDurationMinutes);
+        settings.setValue(QStringLiteral("controls/seekDurationSeconds"), m_seekDurationSeconds);
         settings.setValue(QStringLiteral("controls/seekWheel"), m_seekWheelMode);
         settings.setValue(QStringLiteral("controls/zoomWheel"), m_zoomWheelMode);
         settings.setValue(QStringLiteral("controls/volumeWheel"), m_volumeWheelMode);
@@ -588,8 +590,8 @@ void MainWindow::syncPlaylistSelection() {
 
 void MainWindow::command(const char** args) { if (m_mpv) mpv_command_async(m_mpv, 0, args); }
 void MainWindow::togglePause() { const char* args[] = {"cycle", "pause", nullptr}; command(args); }
-void MainWindow::seekBackward() { const QByteArray seconds = QByteArray::number(-m_seekDurationMinutes * 60); const char* args[] = {"seek", seconds.constData(), "relative", "exact", nullptr}; command(args); }
-void MainWindow::seekForward() { const QByteArray seconds = QByteArray::number(m_seekDurationMinutes * 60); const char* args[] = {"seek", seconds.constData(), "relative", "exact", nullptr}; command(args); }
+void MainWindow::seekBackward() { const QByteArray seconds = QByteArray::number(-m_seekDurationSeconds); const char* args[] = {"seek", seconds.constData(), "relative", "exact", nullptr}; command(args); }
+void MainWindow::seekForward() { const QByteArray seconds = QByteArray::number(m_seekDurationSeconds); const char* args[] = {"seek", seconds.constData(), "relative", "exact", nullptr}; command(args); }
 void MainWindow::seekTo(int value) { const double duration = getPropertyDouble("duration"); if (duration > 0) setPropertyDouble("time-pos", duration * value / 1000.0); }
 void MainWindow::setVolume(int value) { setPropertyDouble("volume", value); }
 double MainWindow::getPropertyDouble(const char* name) const { if (!m_mpv) return 0.0; double value = 0.0; return mpv_get_property(m_mpv, name, MPV_FORMAT_DOUBLE, &value) >= 0 ? value : 0.0; }
@@ -794,7 +796,7 @@ void MainWindow::saveLogReport() {
     out << "\nA-B / Controls\n--------------\n";
     out << "A-B start: " << m_abLoopStart << "\n";
     out << "A-B end: " << m_abLoopEnd << "\n";
-    out << "Seek duration (minutes): " << m_seekDurationMinutes << "\n";
+    out << "Seek duration (seconds): " << m_seekDurationSeconds << "\n";
     out << "Seek wheel: " << m_seekWheelMode << "\n";
     out << "Zoom wheel: " << m_zoomWheelMode << "\n";
     out << "Volume wheel: " << m_volumeWheelMode << "\n";
