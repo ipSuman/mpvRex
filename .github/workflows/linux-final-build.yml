@@ -23,11 +23,9 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential cmake pkg-config qt6-base-dev libmpv-dev
 
-      - name: Apply Save Log update
-        run: python3 linux/restore_save_log.py
-
-      - name: Apply autoplay v2 fix
-        run: python3 linux/fix_autoplay_v2.py
+      - name: Restore verified Linux source
+        run: |
+          git checkout 6c9bbcaf79229b68c6e6afe56c7a9ed9a9923c06 -- linux/src/MainWindow.h linux/src/MainWindow.cpp
 
       - name: Apply double-tap seek update
         run: python3 linux/fix_double_tap_seek.py
